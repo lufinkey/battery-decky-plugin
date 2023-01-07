@@ -1,7 +1,8 @@
 import os
 import sys
-# append py_modules to PYTHONPATH
-sys.path.append(os.path.dirname(os.path.realpath(__file__))+"/py_modules")
+PLUGIN_DIR = os.path.dirname(os.path.realpath(__file__))
+sys.path.append(PLUGIN_DIR+"/py_modules")
+sys.path.append(PLUGIN_DIR+"/backend")
 
 import logging
 
@@ -13,15 +14,11 @@ logger=logging.getLogger()
 logger.setLevel(logging.INFO) # can be changed to logging.DEBUG for debugging issues
 
 class Plugin:
-    # A normal method. It can be called from JavaScript using call_plugin_function("method_1", argument1, argument2)
-    async def add(self, left, right):
-        return left + right
-
     # Asyncio-compatible long-running code, executed in a task when the plugin is loaded
     async def _main(self):
-        logger.info("Hello World!")
+        logger.info("Loading Battery Info plugin")
     
     # Function called first during the unload process, utilize this to handle your plugin being removed
     async def _unload(self):
-        logger.info("Goodbye World!")
+        logger.info("Unloading Battery Info plugin")
         pass
