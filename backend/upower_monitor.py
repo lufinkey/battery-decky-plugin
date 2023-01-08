@@ -41,8 +41,8 @@ class UPowerMonitorEventHeader:
 			diff_from_yesterday = -diff_from_yesterday
 		# whichever date is closer to now is the one we should use
 		if diff_from_yesterday < diff_from_now:
-			return diff_from_yesterday
-		return diff_from_now
+			return datetm_from_yesterday
+		return datetm_from_now
 	
 	@classmethod
 	def parse(cls, data: str, offset: int) -> Tuple['UPowerMonitorEventHeader', int]:
