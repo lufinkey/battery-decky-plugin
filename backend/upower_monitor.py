@@ -283,7 +283,7 @@ class UPowerMonitor:
 				# check if the line is empty
 				if not line_str.isspace():
 					# add line to chunk
-					lines.append(line)
+					lines.append(line_str)
 				else:
 					# line is empty, so read whole chunk if there is a chunk to read
 					if len(lines) > 0:
