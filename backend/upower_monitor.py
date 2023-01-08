@@ -27,11 +27,12 @@ class UPowerMonitorEventHeader:
 		local_tz = now.tzinfo
 		yesterday = now - datetime.timedelta(days=1)
 		# get time components from string
-		tm = time.strptime(time_str, "%H:%M:%S.%f")
+		tm = datetime.datetime.strptime(time_str, "%H:%M:%S.%f")
 		# determine if we should use the date from today or yesterday for the timestamp
-		datetm_from_now = datetime.datetime(year=now.year, month=now.month, day=now.day, hour=tm.tm_hour, minute=tm.tm_min, second=tm.tm_sec, tzinfo=local_tz)
+		#datetm_from_now = datetime.datetime(year=now.year, month=now.month, day=now.day, hour=tm.tm_hour, minute=tm.tm_min, second=tm.tm_sec, tzinfo=local_tz)
+		datetm_from_now = tm
 		diff_from_now = datetm_from_now - now
-		datetm_from_yesterday = datetime.datetime(year=yesterday.year, month=yesterday.month, day=yesterday.day, hour=tm.tm_hour, minute=tm.tm_min, second=tm.tm_sec, tzinfo=local_tz)
+		datetm_from_yesterday = datetime.datetime(year=yesterday.year, month=yesterday.month, day=yesterday.day, hour=tm.hour, minute=tm.minute, second=tm.second, microsecond=tm.microsecond, tzinfo=local_tz)
 		diff_from_yesterday = datetm_from_yesterday - now
 		# normalize date diff
 		zero_td = datetime.timedelta()
