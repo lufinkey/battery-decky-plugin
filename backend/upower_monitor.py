@@ -25,7 +25,7 @@ class UPowerMonitorEventHeader:
 		# get date for now and yesterday
 		now = datetime.datetime.now()
 		local_tz = now.tzinfo
-		yesterday = now - now - datetime.timedelta(days=1)
+		yesterday = now - datetime.timedelta(days=1)
 		# get time components from string
 		tm = time.strptime(timestampStr, "%H:%M:%S.%f")
 		# determine if we should use the date from today or yesterday for the timestamp
