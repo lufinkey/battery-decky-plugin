@@ -26,19 +26,23 @@ def get_next_line_index(data: str, offset: int) -> int:
 		lineEnd += 1
 	return lineEnd
 
-def merge_dict(d: dict, patch: dict) -> dict:
-	d = d.copy()
+def merge_dict(d: dict, patch: dict, copy: bool = True, copy_inner: bool = True) -> dict:
+	if copy:
+		d = d.copy()
 	for key in patch:
 		d_val = d[key] if key in d else None
 		p_val = patch[key]
 		if d_val is None:
 			d[key] = p_val
 			continue
-		elif p_val is dict:
-			if d_val is dict:
-				d_val = merge_dict(d_val, p_val)
+		elif isinstance(p_val, dict):
+			if isinstance(d_val, dict):
+				d_val = merge_dict(d_val, p_val, copy=copy_inner, copy_inner=copy_inner)
 			else:
-				d_val = p_val
+				if copy_inner:
+					d_val = p_val.copy()
+				else:
+					d_val = p_val
 			d[key] = d_val
 		elif p_val is not None:
 			d[key] = p_val

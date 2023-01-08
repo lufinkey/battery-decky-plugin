@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from typing import IO, Tuple, Dict, List
+from typing import IO, Tuple, Dict, List, Callable
 from dataclasses import dataclass
 import time
 import datetime
@@ -143,8 +143,20 @@ class UPowerDeviceInfo:
 					info[entry_key] = child_info
 		return (info, offset)
 	
+	def copy(self) -> 'UPowerDeviceInfo':
+		new_info = dict()
+		for key in self._info:
+			val = self._info[key]
+			if isinstance(val, dict):
+				new_info[key] = val.copy()
+			elif isinstance(val, list):
+				new_info[key] = val.copy()
+			else:
+				new_info[key] = val
+		return UPowerDeviceInfo(new_info)
+	
 	def merge_from(self, other_info: 'UPowerDeviceInfo'):
-		self._info = merge_dict(self._info, other_info._info)
+		self._info = merge_dict(self._info, other_info._info, copy=False, copy_inner=True)
 
 
 
@@ -154,6 +166,7 @@ class UPowerMonitor:
 	monitor_reader_thread: threading.Thread = None
 	last_logtime: datetime.datetime = None
 	device_infos: Dict[str,UPowerDeviceInfo] = dict()
+	when_device_updated: Callable[[UPowerMonitorEventHeader, UPowerDeviceInfo], None] = None
 	
 	def __init__(self):
 		self.main_loop = asyncio.get_running_loop()
@@ -208,7 +221,7 @@ class UPowerMonitor:
 		self.monitor_proc = subprocess.Popen(
 			['upower', '--monitor-detail'],
 			stdout = subprocess.PIPE)
-		# read monitor output on thread
+		# read monitor output on separate thread
 		monitor_stdout = self.monitor_proc.stdout
 		self.monitor_reader_thread = threading.Thread(target=self._consume_monitor_output, args=(monitor_stdout, ))
 		self.monitor_reader_thread.start()
@@ -227,16 +240,20 @@ class UPowerMonitor:
 				await asyncio.sleep(0.1)
 			if self.monitor_reader_thread is thread:
 				self.monitor_reader_thread = None
+			thread.join()
 	
 	def on_monitor_device_update(self, header: UPowerMonitorEventHeader, new_info: UPowerDeviceInfo):
 		if header.event_value is not None and len(header.event_value) > 0:
 			if header.event_value in self.device_infos:
-				device_info = self.device_infos[header.event_value]
-				device_info.merge_from(new_info)
-				self.device_infos[header.event_value] = device_info
+				new_device_info = self.device_infos[header.event_value].copy()
+				new_device_info.merge_from(new_info)
 			else:
 				logger.warn("new device entry "+header.event_value)
-				self.device_infos[header.event_value] = new_info
+				new_device_info = new_info
+			self.device_infos[header.event_value] = new_device_info
+			# call device update event property
+			if self.when_device_updated is not None:
+				self.when_device_updated(header, new_device_info)
 	
 	def on_monitor_end(self):
 		self.monitor_proc = None
@@ -258,5 +275,6 @@ class UPowerMonitor:
 					logger.error("No header found for monitor output:\n"+chunk_str)
 				else:
 					(info, offset) = UPowerDeviceInfo.parse(chunk_str, offset)
+					logger.info("got event {} for {} at timestamp {}".format(header.event_type, str(header.event_value), str(header.logtime)))
 					self.main_loop.call_soon_threadsafe(lambda:self.on_monitor_device_update(header, info))
 		self.main_loop.call_soon_threadsafe(lambda:self.on_monitor_end())
