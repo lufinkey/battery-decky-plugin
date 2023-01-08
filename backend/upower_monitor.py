@@ -191,8 +191,10 @@ class UPowerMonitor:
 			['upower', '--show-info', name],
 			stdout = subprocess.PIPE)
 		output = proc.stdout.read()
-		output_str = output.decode('utf-8').strip()
+		output_str = output.decode('utf-8')
 		(info, offset) = UPowerDeviceInfo.parse(output_str, 0)
+		if info is None:
+			logger.error("Couldn't parse device info from output chunk "+output_str)
 		return info
 
 	async def start(self):
