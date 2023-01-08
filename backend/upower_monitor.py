@@ -289,14 +289,18 @@ class UPowerMonitor:
 					if len(lines) > 0:
 						# read chunk
 						chunk_str = "".join(lines)
+						lines.clear()
 						offset = 0
 						(header, offset) = UPowerMonitorEventHeader.parse(chunk_str, offset)
 						if header is None:
 							logger.error("No header found for monitor output:\n"+chunk_str)
 						else:
 							(info, offset) = UPowerDeviceInfo.parse(chunk_str, offset)
-							logger.info("got event {} for {} at timestamp {}".format(header.event_type, str(header.event_value), str(header.logtime)))
-							self.main_loop.call_soon_threadsafe(lambda:self.on_monitor_device_update(header, info))
+							if info is None:
+								logger.error("failed to read chunk:\n"+chunk_str)
+							else:
+								logger.info("got event {} for {} at timestamp {}".format(header.event_type, str(header.event_value), str(header.logtime)))
+								self.main_loop.call_soon_threadsafe(lambda:self.on_monitor_device_update(header, info))
 					else:
 						# ignore empty line
 						logger.info("Ignoring empty line")
