@@ -21,13 +21,13 @@ class UPowerMonitorEventHeader:
 	event_value: str
 
 	@classmethod
-	def parse_log_timestamp(cls, timestampStr: str) -> datetime.datetime:
+	def parse_log_timestamp(cls, time_str: str) -> datetime.datetime:
 		# get date for now and yesterday
 		now = datetime.datetime.now()
 		local_tz = now.tzinfo
 		yesterday = now - datetime.timedelta(days=1)
 		# get time components from string
-		tm = time.strptime(timestampStr, "%H:%M:%S.%f")
+		tm = time.strptime(time_str, "%H:%M:%S.%f")
 		# determine if we should use the date from today or yesterday for the timestamp
 		datetm_from_now = datetime.datetime(year=now.year, month=now.month, day=now.day, hour=tm.tm_hour, minute=tm.tm_min, second=tm.tm_sec, tzinfo=local_tz)
 		diff_from_now = datetm_from_now - now
@@ -56,25 +56,25 @@ class UPowerMonitorEventHeader:
 			return (None, get_next_line_index(data, offset))
 		# ensure end of log prefix
 		try:
-			endBracketIndex = data.index("]", offset+1)
+			endbracket_index = data.index("]", offset+1)
 		except ValueError as error:
 			logger.error("Could not find expected ] for log at offset {} of chunk:\n{}".format(offset, data))
 			logger.error(str(error))
 			return (None, get_next_line_index(data, offset))
 		# attempt to parse log timestamp
-		timestampStr = data[(offset+1):endBracketIndex]
-		logtime = cls.parse_log_timestamp(timestampStr)
+		time_str = data[(offset+1):endbracket_index]
+		logtime = cls.parse_log_timestamp(time_str)
 		# attempt to parse event type + value
-		next_line_index = get_next_line_index(data, endBracketIndex+1)
+		next_line_index = get_next_line_index(data, endbracket_index+1)
 		try:
-			colonIndex = data.index(":", endBracketIndex+1)
+			colon_index = data.index(":", endbracket_index+1)
 		except ValueError as error:
-			colonIndex = next_line_index
-		event_type = data[endBracketIndex+1:next_line_index].strip()
-		if colonIndex >= next_line_index:
+			colon_index = next_line_index
+		event_type = data[endbracket_index+1:next_line_index].strip()
+		if colon_index >= next_line_index:
 			event_value = None
 		else:
-			event_value = data[colonIndex+1:next_line_index].strip()
+			event_value = data[colon_index+1:next_line_index].strip()
 		# create header
 		header = UPowerMonitorEventHeader(
 			logtime=logtime,
@@ -303,7 +303,7 @@ class UPowerMonitor:
 							if info is None:
 								logger.error("failed to read chunk:\n"+chunk_str)
 							else:
-								logger.info("got event {} for {} at timestamp {}".format(header.event_type, str(header.event_value), str(header.logtime)))
+								logger.info("got event {} for {} at timestamp {}".format(header.event_type, str(header.event_value), header.logtime.isoformat()))
 								self.main_loop.call_soon_threadsafe(lambda:self.on_monitor_device_update(header, info))
 					else:
 						# ignore empty line
