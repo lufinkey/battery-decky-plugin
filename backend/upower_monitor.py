@@ -289,6 +289,7 @@ class UPowerMonitor:
 					if len(lines) > 0:
 						# read chunk
 						chunk_str = "".join(lines)
+						offset = 0
 						(header, offset) = UPowerMonitorEventHeader.parse(chunk_str, offset)
 						if header is None:
 							logger.error("No header found for monitor output:\n"+chunk_str)
