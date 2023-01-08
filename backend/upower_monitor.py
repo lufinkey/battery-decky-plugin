@@ -91,7 +91,7 @@ class UPowerDeviceInfo:
 	
 	@classmethod
 	def parse(cls, data: str, offset: int) -> Tuple['UPowerDeviceInfo', int]:
-		(info_dict, offset) = cls.parse_info_chunk(data, offset=offset, info=info_dict, parent_indent=0)
+		(info_dict, offset) = cls.parse_info_chunk(data, offset=offset, parent_indent=0)
 		return (UPowerDeviceInfo(info_dict), offset)
 	
 	@classmethod
@@ -113,13 +113,13 @@ class UPowerDeviceInfo:
 				elif c == '\t':
 					line_indent += 4
 				elif c == '\r' or c == '\n':
-					return get_next_line_index(data, offset)
+					return (None, get_next_line_index(data, offset))
 				else:
 					break
 				offset += 1
 			if line_indent <= parent_indent:
 				# this belongs to a previous indent level
-				return line_offset
+				return (None, line_offset)
 			# check for a colon
 			keyEndIndex = skip_to_occurance_of_chars(data, offset, ":\r\n")
 			if keyEndIndex == data_len:
@@ -191,6 +191,11 @@ class UPowerMonitor:
 			await self.stop()
 		# get initial device info
 		devices = self.fetch_devices()
+		device_count = len(devices)
+		if device_count == 0:
+			logger.warn("didn't find any power devices")
+		else:
+			logger.info("found {} initial devices:\n{}".format(len(devices), "- "+str.join("\n- ", devices)))
 		device_infos = dict()
 		for device in devices:
 			device_info = self.fetch_device_info(device)
@@ -205,7 +210,7 @@ class UPowerMonitor:
 			stdout = subprocess.PIPE)
 		# read monitor output on thread
 		monitor_stdout = self.monitor_proc.stdout
-		self.monitor_reader_thread = threading.Thread(lambda:self._consume_monitor_output(monitor_stdout))
+		self.monitor_reader_thread = threading.Thread(target=self._consume_monitor_output, args=(monitor_stdout, ))
 		self.monitor_reader_thread.start()
 
 	async def stop(self):
@@ -244,7 +249,7 @@ class UPowerMonitor:
 			offset = 0
 			if is_first and not str.startswith(chunk_str, "["):
 				# ignore first chunk
-				logger.log("Ignoring first chunk: "+chunk_str)
+				logger.info("Ignoring first chunk:\n"+chunk_str)
 				is_first = False
 			else:
 				# read chunk
