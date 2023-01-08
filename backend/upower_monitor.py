@@ -92,6 +92,8 @@ class UPowerDeviceInfo:
 	@classmethod
 	def parse(cls, data: str, offset: int) -> Tuple['UPowerDeviceInfo', int]:
 		(info_dict, offset) = cls.parse_info_chunk(data, offset=offset, parent_indent=0)
+		if info_dict is None:
+			return (None, offset)
 		return (UPowerDeviceInfo(info_dict), offset)
 	
 	@classmethod
