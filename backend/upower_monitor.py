@@ -192,7 +192,7 @@ class UPowerMonitor:
 		output_str = output.decode('utf-8').strip()
 		(info, offset) = UPowerDeviceInfo.parse(output_str, 0)
 		return info
-
+	
 	async def start(self):
 		if self.monitor_proc is not None and self.monitor_proc.poll() is None \
 			and self.monitor_reader_thread is not None and self.monitor_reader_thread.is_alive():
@@ -225,7 +225,7 @@ class UPowerMonitor:
 		monitor_stdout = self.monitor_proc.stdout
 		self.monitor_reader_thread = threading.Thread(target=self._consume_monitor_output, args=(monitor_stdout, ))
 		self.monitor_reader_thread.start()
-
+	
 	async def stop(self):
 		# kill upower process
 		if self.monitor_proc is not None:
@@ -262,19 +262,22 @@ class UPowerMonitor:
 	def _consume_monitor_output(self, stdout: IO[bytes]):
 		is_first = True
 		for chunk in stdout:
-			chunk_str = chunk.decode('utf-8')
-			offset = 0
-			if is_first and not str.startswith(chunk_str, "["):
-				# ignore first chunk
-				logger.info("Ignoring first chunk:\n"+chunk_str)
-				is_first = False
-			else:
-				# read chunk
-				(header, offset) = UPowerMonitorEventHeader.parse(chunk_str, offset)
-				if header is None:
-					logger.error("No header found for monitor output:\n"+chunk_str)
+			try:
+				chunk_str = chunk.decode('utf-8')
+				offset = 0
+				if is_first and not str.startswith(chunk_str, "["):
+					# ignore first chunk
+					logger.info("Ignoring first chunk:\n"+chunk_str)
+					is_first = False
 				else:
-					(info, offset) = UPowerDeviceInfo.parse(chunk_str, offset)
-					logger.info("got event {} for {} at timestamp {}".format(header.event_type, str(header.event_value), str(header.logtime)))
-					self.main_loop.call_soon_threadsafe(lambda:self.on_monitor_device_update(header, info))
+					# read chunk
+					(header, offset) = UPowerMonitorEventHeader.parse(chunk_str, offset)
+					if header is None:
+						logger.error("No header found for monitor output:\n"+chunk_str)
+					else:
+						(info, offset) = UPowerDeviceInfo.parse(chunk_str, offset)
+						logger.info("got event {} for {} at timestamp {}".format(header.event_type, str(header.event_value), str(header.logtime)))
+						self.main_loop.call_soon_threadsafe(lambda:self.on_monitor_device_update(header, info))
+			except BaseException as error:
+				logger.error("Error while parsing upower output:\n"+str(error))
 		self.main_loop.call_soon_threadsafe(lambda:self.on_monitor_end())
