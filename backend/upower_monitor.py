@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from typing import IO, Tuple, Dict, List, Callable
 from dataclasses import dataclass
-import time
+import os
 import datetime
 import logging
 import asyncio
@@ -13,37 +13,151 @@ from utils import skip_to_occurance_of_chars, get_line_end_index, get_next_line_
 logger = logging.getLogger()
 
 
+def read_value_in_units(val_str: str, unit: str, conversions: Dict[str, float], defaultunit: str = None):
+	if val_str is None:
+		return None
+	parts = val_str.split()
+	parts_len = len(parts)
+	if parts_len == 0:
+		return None
+	num_str = parts[0]
+	if parts_len == 1:
+		if defaultunit is not None:
+			if defaultunit in conversions:
+				mult = conversions[defaultunit]
+			elif defaultunit == unit:
+				mult = 1
+			else:
+				logger.error("unknown conversion for unit "+defaultunit)
+				return None
+			return float(num_str) * mult
+		else:
+			logger.error("unknown units for value "+val_str)
+			return None
+	units_str = parts[1]
+	if units_str in conversions:
+		mult = conversions[units_str]
+	elif units_str == unit:
+		mult = 1
+	else:
+		logger.error("unknown units "+units_str)
+		return None
+	return float(num_str) * mult
+
+
+def read_value_Wh(val_str: str) -> float:
+	return read_value_in_units(val_str,
+		unit = "Wh",
+		conversions = {
+			"Wh": 1,
+			"kWh": 1000
+		},
+		defaultunit="Wh")
+
+def read_value_W(val_str: str) -> float:
+	return read_value_in_units(val_str,
+		unit = "W",
+		conversions = {
+			"W": 1,
+			"kW": 1000
+		},
+		defaultunit="W")
+
+def read_value_V(val_str: str) -> float:
+	return read_value_in_units(val_str,
+		unit = "V",
+		conversions = {
+			"V": 1,
+			"kV": 1000
+		},
+		defaultunit="V")
+
+def read_value_duration(time_str: str) -> datetime.timedelta:
+	if time_str is None:
+		return None
+	time_parts = time_str.split()
+	parts_len = len(time_parts)
+	if parts_len <= 1 or (parts_len % 2) != 0:
+		logger.error("invalid number of parts for time string "+time_str)
+		return None
+	pairs_count = parts_len / 2
+	td = datetime.timedelta()
+	for i in range(pairs_count):
+		num_i = i * 2
+		num_str = time_parts[num_i]
+		unit_str = time_parts[num_i + 1]
+		num_val = float(num_str)
+		if unit_str == "minutes":
+			td += datetime.timedelta(minutes=num_val)
+		elif unit_str == "hours":
+			td += datetime.timedelta(hours=num_val)
+		elif unit_str == "seconds":
+			td += datetime.timedelta(seconds=num_val)
+		elif unit_str == "days":
+			td += datetime.timedelta(days=num_val)
+		else:
+			logger.error("unknown time unit "+unit_str)
+			return None
+	return td
+
+def read_value_percentage(p_str: str) -> float:
+	if p_str is None:
+		return None
+	p_suffix = "%"
+	if p_str.endswith(p_suffix):
+		p_str = p_str[0:len(p_str)-len(p_suffix)].rstrip()
+	return float(p_str)
+
+
+
+@dataclass
+class UPowerLogTime:
+	hour: int
+	minute: int
+	second: int
+	microsecond: int
+
+	@classmethod
+	def parse(cls, time_str: str) -> 'UPowerLogTime':
+		offset = 0
+		# parse hour
+		end_index = time_str.find(':', offset)
+		if end_index == -1:
+			return None
+		hour = int(time_str[offset:end_index])
+		# parse minute
+		offset = end_index+1
+		end_index = time_str.find(':', offset)
+		if end_index == -1:
+			return None
+		minute = int(time_str[offset:end_index])
+		# parse second
+		offset = end_index+1
+		end_index = time_str.find('.', offset)
+		if end_index != -1:
+			second = int(time_str[offset:end_index])
+			# parse microsecond
+			offset = end_index+1
+			microsecond_str = time_str[offset:]
+			microsecond = int(microsecond_str)
+			for i in range(6-len(microsecond_str)):
+				microsecond *= 10
+		else:
+			second = int(time_str[offset:])
+			microsecond = 0
+		return UPowerLogTime(
+			hour=hour,
+			minute=minute,
+			second=second,
+			microsecond=microsecond)
+
+
 
 @dataclass
 class UPowerMonitorEventHeader:
-	logtime: datetime.datetime
+	logtime: UPowerLogTime
 	event_type: str
 	event_value: str
-
-	@classmethod
-	def parse_log_timestamp(cls, time_str: str) -> datetime.datetime:
-		# get date for now and yesterday
-		now = datetime.datetime.now()
-		local_tz = now.tzinfo
-		yesterday = now - datetime.timedelta(days=1)
-		# get time components from string
-		tm = datetime.datetime.strptime(time_str, "%H:%M:%S.%f")
-		# determine if we should use the date from today or yesterday for the timestamp
-		#datetm_from_now = datetime.datetime(year=now.year, month=now.month, day=now.day, hour=tm.tm_hour, minute=tm.tm_min, second=tm.tm_sec, tzinfo=local_tz)
-		datetm_from_now = tm
-		diff_from_now = datetm_from_now - now
-		datetm_from_yesterday = datetime.datetime(year=yesterday.year, month=yesterday.month, day=yesterday.day, hour=tm.hour, minute=tm.minute, second=tm.second, microsecond=tm.microsecond, tzinfo=local_tz)
-		diff_from_yesterday = datetm_from_yesterday - now
-		# normalize date diff
-		zero_td = datetime.timedelta()
-		if diff_from_now < zero_td:
-			diff_from_now = -diff_from_now
-		if diff_from_yesterday < zero_td:
-			diff_from_yesterday = -diff_from_yesterday
-		# whichever date is closer to now is the one we should use
-		if diff_from_yesterday < diff_from_now:
-			return datetm_from_yesterday
-		return datetm_from_now
 	
 	@classmethod
 	def parse(cls, data: str, offset: int) -> Tuple['UPowerMonitorEventHeader', int]:
@@ -64,7 +178,7 @@ class UPowerMonitorEventHeader:
 			return (None, get_next_line_index(data, offset))
 		# attempt to parse log timestamp
 		time_str = data[(offset+1):endbracket_index]
-		logtime = cls.parse_log_timestamp(time_str)
+		logtime = UPowerLogTime.parse(time_str)
 		# attempt to parse event type + value
 		next_line_index = get_next_line_index(data, endbracket_index+1)
 		try:
@@ -86,9 +200,72 @@ class UPowerMonitorEventHeader:
 
 
 @dataclass
+class UPowerDeviceBatteryInfo:
+	info: dict
+
+	def __init__(self, info: dict) -> None:
+		self.info = info
+
+	@property
+	def state(self) -> str:
+		return self.info.get("state", None)
+	
+	@property
+	def energy_Wh(self) -> float:
+		return read_value_Wh(self.info.get("energy", None))
+	
+	@property
+	def energy_empty_Wh(self) -> float:
+		return read_value_Wh(self.info.get("energy-empty", None))
+	
+	@property
+	def energy_full_Wh(self) -> float:
+		return read_value_Wh(self.info.get("energy-full", None))
+	
+	@property
+	def energy_full_design_Wh(self) -> float:
+		return read_value_Wh(self.info.get("energy-full-design", None))
+	
+	@property
+	def energy_rate_W(self) -> float:
+		return read_value_W(self.info.get("energy-rate", None))
+	
+	@property
+	def voltage_V(self) -> float:
+		return read_value_V(self.info.get("voltage", None))
+	
+	@property
+	def time_till_full(self) -> datetime.timedelta:
+		return read_value_duration(self.info.get("time to full"))
+	
+	@property
+	def seconds_till_full(self) -> float:
+		td = self.time_till_full
+		if td is None:
+			return None
+		return td.total_seconds()
+	
+	@property
+	def percent_current(self) -> float:
+		return read_value_percentage(self.info.get("percentage"))
+	
+	@property
+	def percent_capacity(self) -> float:
+		return read_value_percentage(self.info.get("capacity"))
+
+
+
+@dataclass
 class UPowerDeviceInfo:
 	def __init__(self, info: dict):
-		self._info = info
+		self.info = info
+	
+	def get_device_type(self):
+		if 'battery' in self.info:
+			return 'battery'
+		elif 'line-power' in self.info:
+			return 'line-power'
+		return None
 	
 	@classmethod
 	def parse(cls, data: str, offset: int) -> Tuple['UPowerDeviceInfo', int]:
@@ -148,8 +325,8 @@ class UPowerDeviceInfo:
 	
 	def copy(self) -> 'UPowerDeviceInfo':
 		new_info = dict()
-		for key in self._info:
-			val = self._info[key]
+		for key in self.info:
+			val = self.info[key]
 			if isinstance(val, dict):
 				new_info[key] = val.copy()
 			elif isinstance(val, list):
@@ -159,8 +336,14 @@ class UPowerDeviceInfo:
 		return UPowerDeviceInfo(new_info)
 	
 	def merge_from(self, other_info: 'UPowerDeviceInfo'):
-		self._info = merge_dict(self._info, other_info._info, copy=False, copy_inner=True)
-
+		self.info = merge_dict(self.info, other_info.info, copy=False, copy_inner=True)
+	
+	@property
+	def battery_info(self) -> UPowerDeviceBatteryInfo:
+		batt_info = self.info.get("battery", None)
+		if batt_info is None:
+			return None
+		return UPowerDeviceBatteryInfo(batt_info)
 
 
 class UPowerMonitor:
@@ -169,7 +352,7 @@ class UPowerMonitor:
 	monitor_reader_thread: threading.Thread = None
 	last_logtime: datetime.datetime = None
 	device_infos: Dict[str,UPowerDeviceInfo] = dict()
-	when_device_updated: Callable[[UPowerMonitorEventHeader, UPowerDeviceInfo], None] = None
+	when_device_updated: Callable[[datetime.datetime, UPowerMonitorEventHeader, UPowerDeviceInfo], None] = None
 	
 	def __init__(self):
 		self.main_loop = asyncio.get_running_loop()
@@ -188,9 +371,15 @@ class UPowerMonitor:
 		return devices
 	
 	def fetch_device_info(self, name: str) -> UPowerDeviceInfo:
+		# attach UTC timezone for more correct date reading
+		procenv = os.environ.copy()
+		procenv["TZ"] = "UTC"
+		# run upower process
 		proc = subprocess.Popen(
 			['upower', '--show-info', name],
+			env=procenv,
 			stdout = subprocess.PIPE)
+		# parse output
 		output = proc.stdout.read()
 		output_str = output.decode('utf-8')
 		(info, offset) = UPowerDeviceInfo.parse(output_str, 0)
@@ -198,15 +387,16 @@ class UPowerMonitor:
 			logger.error("Couldn't parse device info from output chunk "+output_str)
 		return info
 
-	async def start(self):
+	def start(self):
 		if self.monitor_proc is not None and self.monitor_proc.poll() is None \
 			and self.monitor_reader_thread is not None and self.monitor_reader_thread.is_alive():
 			# upower monitor is already running
+			logger.warn("called UPowerMonitor.start when it is already started")
 			return
 		if self.monitor_proc is not None or self.monitor_reader_thread is not None:
 			# upower process was killed or is ended
 			# stop to ensure process is dead
-			await self.stop()
+			self.stop()
 		# get initial device info
 		devices = self.fetch_devices()
 		device_count = len(devices)
@@ -222,16 +412,20 @@ class UPowerMonitor:
 			else:
 				device_infos[device] = device_info
 		self.device_infos = device_infos
+		# attach UTC timezone for more correct date reading
+		procenv = os.environ.copy()
+		procenv["TZ"] = "UTC"
 		# run monitor process
 		self.monitor_proc = subprocess.Popen(
 			['upower', '--monitor-detail'],
+			env=procenv,
 			stdout = subprocess.PIPE)
 		# read monitor output on separate thread
 		monitor_stdout = self.monitor_proc.stdout
 		self.monitor_reader_thread = threading.Thread(target=self._consume_monitor_output, args=(monitor_stdout, ))
 		self.monitor_reader_thread.start()
 
-	async def stop(self):
+	def stop(self):
 		# kill upower process
 		if self.monitor_proc is not None:
 			self.monitor_proc.kill()
@@ -239,15 +433,11 @@ class UPowerMonitor:
 		# wait for monitor thread to end
 		if self.monitor_reader_thread is not None:
 			thread = self.monitor_reader_thread
-			if thread.is_alive():
-				await asyncio.sleep(0.05)
-			while thread.is_alive():
-				await asyncio.sleep(0.1)
+			thread.join()
 			if self.monitor_reader_thread is thread:
 				self.monitor_reader_thread = None
-			thread.join()
 	
-	def on_monitor_device_update(self, header: UPowerMonitorEventHeader, new_info: UPowerDeviceInfo):
+	def on_monitor_device_update(self, logtime_utc: datetime.datetime, header: UPowerMonitorEventHeader, new_info: UPowerDeviceInfo):
 		if header.event_value is not None and len(header.event_value) > 0:
 			if header.event_value in self.device_infos:
 				new_device_info = self.device_infos[header.event_value].copy()
@@ -258,13 +448,10 @@ class UPowerMonitor:
 			self.device_infos[header.event_value] = new_device_info
 			# call device update event property
 			if self.when_device_updated is not None:
-				self.when_device_updated(header, new_device_info)
+				self.when_device_updated(logtime_utc, header, new_device_info)
 	
 	def on_monitor_end(self):
 		self.monitor_proc = None
-		pass
-
-	def parse_output_chunk(self, chunk: str, index: int) -> Tuple[UPowerMonitorEventHeader,UPowerDeviceInfo,int]:
 		pass
 	
 	def _consume_monitor_output(self, stdout: IO[bytes]):
@@ -274,6 +461,8 @@ class UPowerMonitor:
 		while reading_chunks:
 			# read a line
 			line = stdout.readline()
+			utcnow = datetime.datetime.utcnow()
+			tzinfo_utc = utcnow.tzinfo
 			if not line:
 				reading_chunks = False
 				break
@@ -296,16 +485,46 @@ class UPowerMonitor:
 						chunk_str = "".join(lines)
 						lines.clear()
 						offset = 0
+						# read chunk header
 						(header, offset) = UPowerMonitorEventHeader.parse(chunk_str, offset)
 						if header is None:
 							logger.error("No header found for monitor output:\n"+chunk_str)
 						else:
-							(info, offset) = UPowerDeviceInfo.parse(chunk_str, offset)
-							if info is None:
+							# read device info
+							(device_info, offset) = UPowerDeviceInfo.parse(chunk_str, offset)
+							if device_info is None:
 								logger.error("failed to read chunk:\n"+chunk_str)
 							else:
+								# parse timestamp
+								logtime_utc = None
+								if "updated" in device_info.info:
+									updated_date_str = device_info["updated"]
+									if isinstance(updated_date_str, str):
+										if updated_date_str.endswith(")"):
+											parenth_start = updated_date_str.rfind("(", 0, len(updated_date_str)-1)
+											if parenth_start != -1:
+												updated_date_str = updated_date_str[0:parenth_start].strip()
+										logtime_utc = datetime.datetime.strptime(updated_date_str, "%a %d %b %Y %I:%M:%S %p %Z")
+										if logtime_utc is not None:
+											logtime_utc = logtime_utc.astimezone(tzinfo_utc)
+								if logtime_utc is None:
+									h_tm = header.logtime
+									tm_from_now = datetime.datetime(year=utcnow.year, month=utcnow.month, day=utcnow.day, hour=h_tm.hour, minute=h_tm.minute, second=h_tm.second, microsecond=h_tm.microsecond, tzinfo=tzinfo_utc)
+									tm_from_yesterday = tm_from_now - datetime.timedelta(days=1)
+									zero_deltatime = datetime.timedelta()
+									diff_from_now = utcnow - tm_from_now
+									if diff_from_now < zero_deltatime:
+										diff_from_now = -diff_from_now
+									diff_from_yesterday = utcnow - tm_from_yesterday
+									if diff_from_yesterday < zero_deltatime:
+										diff_from_yesterday = -diff_from_yesterday
+									if diff_from_yesterday < diff_from_now:
+										logtime_utc = tm_from_yesterday
+									else:
+										logtime_utc = tm_from_now
+								# call update event
 								logger.info("got event {} for {} at timestamp {}".format(header.event_type, str(header.event_value), header.logtime.isoformat()))
-								self.main_loop.call_soon_threadsafe(lambda:self.on_monitor_device_update(header, info))
+								self.main_loop.call_soon_threadsafe(lambda:self.on_monitor_device_update(logtime_utc, header, device_info))
 					else:
 						# ignore empty line
 						logger.info("Ignoring empty line")

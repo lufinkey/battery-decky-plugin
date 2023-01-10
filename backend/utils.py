@@ -1,3 +1,8 @@
+from typing import Callable
+import asyncio
+import logging
+
+logger = logging.getLogger()
 
 def skip_to_occurance_of_chars(data: str, offset: int, chars: str) -> int:
 	data_len = len(data)
@@ -47,3 +52,46 @@ def merge_dict(d: dict, patch: dict, copy: bool = True, copy_inner: bool = True)
 		elif p_val is not None:
 			d[key] = p_val
 	return d
+
+
+class AsyncValue:
+	loop: asyncio.AbstractEventLoop
+	ready_event: asyncio.Event
+	success: bool = None
+	result = None
+	error: BaseException = None
+
+	def __init__(self):
+		self.loop = asyncio.get_event_loop()
+		self.ready_event = asyncio.Event()
+
+	def resolve(self, result):
+		self.result = result
+		self.success = True
+		self.loop.call_soon_threadsafe(lambda:self.ready_event.set())
+	
+	def reject(self, error: BaseException):
+		self.error = error
+		self.success = False
+		self.loop.call_soon_threadsafe(lambda:self.ready_event.set())
+	
+	async def get(self):
+		await self.ready_event.wait()
+		if not self.success:
+			raise self.error
+		return self.result
+
+	@classmethod
+	def _main_sync(cls, val: 'AsyncValue', callable: Callable):
+		try:
+			result = callable()
+		except BaseException as error:
+			val.reject(error)
+			return
+		val.resolve(result)
+	
+	@classmethod
+	async def run_on_loop(cls, loop: asyncio.AbstractEventLoop, callable: Callable):
+		val = AsyncValue()
+		loop.call_soon_threadsafe(cls._main_sync, args=(val, callable))
+		return await val.get()
