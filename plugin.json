@@ -1,10 +1,10 @@
 {
-  "name": "Battery Analytics",
-  "author": "Luis Finke",
-  "flags": [],
-  "publish": {
-    "tags": ["battery", "analytics", "graph", "power"],
-    "description": "View battery analytics over time",
-    "image": "https://opengraph.githubassets.com/1/SteamDeckHomebrew/PluginLoader"
-  }
+	"name": "Battery Analytics",
+	"author": "Luis Finke",
+	"flags": [],
+	"publish": {
+		"tags": ["battery", "analytics", "graph", "power"],
+		"description": "View battery analytics over time",
+		"image": "https://opengraph.githubassets.com/1/SteamDeckHomebrew/PluginLoader"
+	}
 }

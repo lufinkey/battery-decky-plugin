@@ -7,7 +7,10 @@
 		"build": "shx rm -rf dist && rollup -c",
 		"watch": "rollup -c -w",
 		"test": "echo \"Error: no test specified\" && exit 1",
-		"test_backend": "export PYTHONPATH=\"$PWD:$PWD/backend:$PWD/py_modules\"; python3 test.py"
+		"test_backend": "export PYTHONPATH=\"$PWD:$PWD/backend:$PWD/py_modules\"; python3 test.py",
+		"test_frontend": "pnpm run copy_frontend_for_test && cd test_frontend && npm install && npm run build && npm run start",
+		"copy_frontend_for_test": "shx rm -rf test_frontend/src/battery-analytics && shx cp -r src test_frontend/src/battery-analytics",
+		"compile-ts": "npx -p typescript tsc"
 	},
 	"repository": {
 		"type": "git",
@@ -25,23 +28,24 @@
 		"url": "https://github.com/lufinkey/battery-decky-plugin/issues"
 	},
 	"homepage": "https://github.com/lufinkey/battery-decky-plugin#readme",
+	"dependencies": {
+		"decky-frontend-lib": "^3.18.6",
+		"react-icons": "^4.7.1"
+	},
 	"devDependencies": {
 		"@rollup/plugin-commonjs": "^21.1.0",
 		"@rollup/plugin-json": "^4.1.0",
 		"@rollup/plugin-node-resolve": "^13.3.0",
 		"@rollup/plugin-replace": "^4.0.0",
-		"@rollup/plugin-typescript": "^8.3.3",
+		"@rollup/plugin-typescript": "^8.5.0",
 		"@types/react": "16.14.0",
 		"@types/webpack": "^5.28.0",
-		"rollup": "^2.77.1",
+		"react-dom": "^18.2.0",
+		"rollup": "^2.79.1",
 		"rollup-plugin-import-assets": "^1.1.1",
 		"shx": "^0.3.4",
-		"tslib": "^2.4.0",
-		"typescript": "^4.7.4"
-	},
-	"dependencies": {
-		"decky-frontend-lib": "^3.6.1",
-		"react-icons": "^4.4.0"
+		"tslib": "^2.4.1",
+		"typescript": "^4.9.4"
 	},
 	"pnpm": {
 		"peerDependencyRules": {
