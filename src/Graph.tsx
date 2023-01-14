@@ -255,6 +255,7 @@ export class Graph extends Component<Props,State> {
 
 
 	draw(context: CanvasRenderingContext2D) {
+		context.save();
 		// get props
 		const props = this.props;
 		const {
@@ -331,6 +332,7 @@ export class Graph extends Component<Props,State> {
 				}
 			}
 		}
+		context.restore();
 	}
 
 	drawGrid(context: CanvasRenderingContext2D, layoutProps: LayoutProps, gridSpacingX: number | null | undefined, gridSpacingY: number | null | undefined) {
