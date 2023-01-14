@@ -12,7 +12,7 @@ export const MainPage: VFC<{ serverAPI: ServerAPI }> = ({}) => {
 	return (
 		<PanelSection title="Panel Section">
 			<PanelSectionRow>
-			<Graph
+				<Graph
 					lines={[
 						{
 							points: [
@@ -22,14 +22,22 @@ export const MainPage: VFC<{ serverAPI: ServerAPI }> = ({}) => {
 								[5, 2],
 								[6, 3]
 							],
+							lineWidth: 2,
+							strokeStyle: 'lightblue',
 							showLabels: true,
+							
+							dotRadius: 5,
+							dotsFillStyle: 'lightblue',
+
 							labelTextAlign: 'center',
 							labelFillStyle: 'white',
 							labelOffsetY: -8
 						}
 					]}
-					width={160}
+					width={200}
 					height={160}
+					paddingLeft={20}
+					paddingRight={20}
 					gridSpacingX={1}
 					gridSpacingY={1}/>
 				<ButtonItem

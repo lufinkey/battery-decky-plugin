@@ -29,14 +29,22 @@ function App() {
 								[5, 2],
 								[6, 3]
 							],
+							lineWidth: 2,
+							strokeStyle: 'lightblue',
 							showLabels: true,
+							
+							dotRadius: 5,
+							dotsFillStyle: 'lightblue',
+
 							labelTextAlign: 'center',
 							labelFillStyle: 'white',
 							labelOffsetY: -8
 						}
 					]}
-					width={500}
+					width={540}
 					height={500}
+					paddingLeft={20}
+					paddingRight={20}
 					gridSpacingX={1}
 					gridSpacingY={1}/>
 			</header>

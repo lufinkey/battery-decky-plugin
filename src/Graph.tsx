@@ -25,6 +25,8 @@ type LabelProps = {
 type LineData = {
 	points: [number,number][]
 	displayName?: string
+
+	lineWidth?: number
 	strokeStyle?: string
 	fillStyle?: string
 
@@ -255,7 +257,6 @@ export class Graph extends Component<Props,State> {
 
 
 	draw(context: CanvasRenderingContext2D) {
-		context.save();
 		// get props
 		const props = this.props;
 		const {
@@ -275,23 +276,27 @@ export class Graph extends Component<Props,State> {
 
 		// draw background
 		if(backgroundFillStyle) {
+			context.save();
 			context.fillStyle = backgroundFillStyle;
 			context.fillRect(
 				rect.left,
 				rect.top,
 				rect.right-layoutProps.rect.left,
 				rect.bottom-layoutProps.rect.top);
+			context.restore();
 		}
 		
 		// draw grid
 		if(gridSpacingX || gridSpacingY) {
+			context.save();
 			context.strokeStyle = gridStrokeStyle ?? 'lightgray';
 			this.drawGrid(context, layoutProps, gridSpacingX, gridSpacingY);
+			context.restore();
 		}
 		
 		// draw line, fill, and dots
 		const sharedLabelProps: LabelProps = {
-			labelFont: props.labelFont,
+			labelFont: props.labelFont ?? 'bold 12px sans-serif',
 			labelTextBaseline: props.labelTextBaseline,
 			labelTextAlign: props.labelTextAlign,
 			labelFillStyle: props.labelFillStyle,
@@ -311,7 +316,9 @@ export class Graph extends Component<Props,State> {
 					];
 					canvasPoints.push(canvasPoint);
 				}
+				context.save();
 				context.strokeStyle = lineData.strokeStyle ?? 'black';
+				context.lineWidth = lineData.lineWidth ?? 1;
 				this.drawLine(context, points, canvasPoints);
 				context.fillStyle = lineData.fillStyle ?? 'rgba(140,140,140,0.5)';
 				this.drawFill(context, rect, points, canvasPoints);
@@ -330,6 +337,7 @@ export class Graph extends Component<Props,State> {
 					}
 					this.drawLabels(context, points, canvasPoints, labelProps);
 				}
+				context.restore();
 			}
 		}
 		context.restore();
