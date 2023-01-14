@@ -18,6 +18,8 @@ type LabelProps = {
 	labelFillStyle?: LabelFillStyle
 	minLabelInterval?: number
 	getLabelText?: (x: number, y: number) => string
+	labelOffsetX?: number
+	labelOffsetY?: number
 };
 
 type LineData = {
@@ -250,17 +252,6 @@ export class Graph extends Component<Props,State> {
 		return { x: [xMin,xMax], y: [yMin,yMax] };
 	}
 
-	calculateCanvasPoint(point: [number,number], dataRangeX: [number,number], dataRangeY: [number, number], rect: Rect): [number,number] {
-		const dataWidth = dataRangeX[1] - dataRangeX[0];
-		const dataHeight = dataRangeY[1] - dataRangeY[0];
-		const graphWidth = rect.right - rect.left;
-		const graphHeight = rect.bottom - rect.top;
-		return [
-			rect.left + (((point[0] - dataRangeX[0]) / dataWidth) * graphWidth),
-			rect.top + (graphHeight - ((point[1] - dataRangeY[0]) / dataHeight) * graphHeight)
-		];
-	}
-
 
 
 	draw(context: CanvasRenderingContext2D) {
@@ -304,7 +295,9 @@ export class Graph extends Component<Props,State> {
 			labelTextAlign: props.labelTextAlign,
 			labelFillStyle: props.labelFillStyle,
 			minLabelInterval: props.minLabelInterval,
-			getLabelText: props.getLabelText
+			getLabelText: props.getLabelText,
+			labelOffsetX: props.labelOffsetX,
+			labelOffsetY: props.labelOffsetY
 		};
 		for(const lineData of lines) {
 			const points = lineData.points;
@@ -489,8 +482,8 @@ export class Graph extends Component<Props,State> {
 		} else {
 			text = `(${point[0]}, ${point[1]})`;
 		}
-		const labelX = canvasPoint[0];
-		const labelY = canvasPoint[1];
+		const labelX = canvasPoint[0] + (labelProps.labelOffsetX ?? 0);
+		const labelY = canvasPoint[1] + (labelProps.labelOffsetY ?? 0);
 		context.fillText(text, labelX, labelY);
 		context.restore();
 	}
