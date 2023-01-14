@@ -13,12 +13,17 @@ export const MainPage: VFC<{ serverAPI: ServerAPI }> = ({}) => {
 		<PanelSection title="Panel Section">
 			<PanelSectionRow>
 				<Graph
-					data={[
-						[2, 4],
-						[3, 12],
-						[4, 8],
-						[5, 2],
-						[6, 3]
+					lines={[
+						{
+							points: [
+								[2, 4],
+								[3, 12],
+								[4, 8],
+								[5, 2],
+								[6, 3]
+							],
+							showLabels: true
+						}
 					]}
 					width={100}
 					height={100}/>

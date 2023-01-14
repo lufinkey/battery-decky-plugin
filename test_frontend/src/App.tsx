@@ -20,12 +20,17 @@ function App() {
 					Learn React
 				</a>
 				<Graph
-					data={[
-						[2, 4],
-						[3, 12],
-						[4, 8],
-						[5, 2],
-						[6, 3]
+					lines={[
+						{
+							points: [
+								[2, 4],
+								[3, 12],
+								[4, 8],
+								[5, 2],
+								[6, 3]
+							],
+							showLabels: true
+						}
 					]}
 					width={500}
 					height={500}

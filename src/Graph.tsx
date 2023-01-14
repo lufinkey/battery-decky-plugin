@@ -9,8 +9,35 @@ type Rect = {
 	bottom: number
 };
 
+type LabelFillStyle = 'string' | CanvasGradient | CanvasPattern;
+
+type LabelProps = {
+	labelFont?: string
+	labelTextBaseline?: CanvasTextBaseline
+	labelTextAlign?: CanvasTextAlign
+	labelFillStyle?: LabelFillStyle
+	minLabelInterval?: number
+	getLabelText?: (x: number, y: number) => string
+};
+
+type LineData = {
+	points: [number,number][]
+	displayName?: string
+	strokeStyle?: string
+	fillStyle?: string
+
+	showDots?: boolean
+	dotsFillStyle?: string
+	dotRadius?: number
+
+	showLabels?: boolean
+} & LabelProps;
+
+
+
 type Props = {
-	data: [number,number][]
+	lines: LineData[]
+
 	xMin?: number
 	xMax?: number
 	yMin?: number
@@ -24,19 +51,27 @@ type Props = {
 	height: number
 	paddingLeft?: number
 	paddingRight?: number
+	paddingTop?: number
+	paddingBottom?: number
 	gridStrokeStyle?: string
-	lineStrokeStyle?: string
-	fillStyle?: string
 	backgroundFillStyle?: string
 
-	showDots?: boolean
-	dotsFillStyle?: string
-	dotRadius?: number
-};
+	showLabels?: boolean
+} & LabelProps;
 
 type State = {
 	//
 };
+
+
+type LayoutProps = {
+	dataRangeX: [number,number]
+	dataRangeY: [number,number]
+	rect: Rect
+};
+
+
+
 
 // credit to https://github.com/MatthewCallis/Canvas-Graphs (used as reference while writing this)
 
@@ -45,7 +80,46 @@ export class Graph extends Component<Props,State> {
 		super(props);
 	}
 
-	calculateVisibleRange(data: [number,number][],
+	calculateLayoutProps(props: Props): LayoutProps {
+		const { lines, width, height, xMin, xMax, yMin, yMax,
+			dataPaddingX, dataPaddingY,
+			paddingLeft, paddingRight, paddingTop, paddingBottom } = props;
+		// calculate graph rect
+		const rect: Rect = {
+			left: (paddingLeft ?? 0),
+			top: (paddingTop ?? 0),
+			right: (width - (paddingRight ?? 0)),
+			bottom: (height - (paddingBottom ?? 0))
+		};
+		
+		// calculate visible range
+		let xMinPadding = 0;
+		let xMaxPadding = 0;
+		if(typeof dataPaddingX == 'number') {
+			xMinPadding = dataPaddingX;
+			xMaxPadding = dataPaddingX;
+		} else if(dataPaddingX) {
+			xMinPadding = dataPaddingX[0];
+			xMaxPadding = dataPaddingX[1];
+		}
+		let yMinPadding = 0;
+		let yMaxPadding = 1;
+		if(typeof dataPaddingY == 'number') {
+			yMinPadding = dataPaddingY;
+			yMaxPadding = dataPaddingY;
+		} else if(dataPaddingY) {
+			yMinPadding = dataPaddingY[0];
+			yMaxPadding = dataPaddingY[1];
+		}
+		const { x: dataRangeX, y: dataRangeY } = this.calculateVisibleRange(lines, xMin, xMax, yMin, yMax, xMinPadding, xMaxPadding, yMinPadding, yMaxPadding);
+		return {
+			dataRangeX,
+			dataRangeY,
+			rect
+		};
+	}
+
+	calculateVisibleRange(lines: LineData[],
 		xMin: number | undefined, xMax: number | undefined,
 		yMin: number | undefined, yMax: number | undefined,
 		xMinPadding: number,
@@ -55,7 +129,21 @@ export class Graph extends Component<Props,State> {
 		if(xMin != null && xMax != null && yMin != null && yMax != null) {
 			return { x: [xMin, xMax], y: [yMin, yMax] };
 		}
-		if(data.length == 0) {
+		let c = 0;
+		let firstPoint: [number,number] | undefined = undefined;
+		for(const lineData of lines) {
+			const pointsLen = lineData.points.length;
+			if(pointsLen > 0) {
+				if(c == 0) {
+					firstPoint = lineData.points[0];
+				}
+				c += lineData.points.length;
+				if(c > 1) {
+					break;
+				}
+			}
+		}
+		if(c == 0) {
 			if(xMin == null) {
 				if(xMax != null) {
 					xMin = xMax - xMinPadding;
@@ -76,8 +164,8 @@ export class Graph extends Component<Props,State> {
 			if(yMax == null) {
 				yMax = yMin + yMaxPadding;
 			}
-		} else if(data.length == 1) {
-			const p = data[0];
+		} else if(c == 1) {
+			const p = firstPoint as [number,number];
 			if(xMin == null) {
 				if(xMax != null && xMax < p[0]) {
 					xMin = xMax - xMinPadding;
@@ -107,27 +195,27 @@ export class Graph extends Component<Props,State> {
 				}
 			}
 		} else {
-			const dataLen = data.length;
-			let point = data[0];
-			let px = point[0];
-			let py = point[1];
+			firstPoint = firstPoint as [number,number];
+			let px = firstPoint[0];
+			let py = firstPoint[1];
 			let trueRangeXMin = px;
 			let trueRangeXMax = px;
 			let trueRangeYMin = py;
 			let trueRangeYMax = py;
-			for(let i=1; i<dataLen; i++) {
-				point = data[i];
-				px = point[0];
-				py = point[1];
-				if(px < trueRangeXMin) {
-					trueRangeXMin = px;
-				} else if(px > trueRangeXMax) {
-					trueRangeXMax = px;
-				}
-				if(py < trueRangeYMin) {
-					trueRangeYMin = py;
-				} else if(py > trueRangeYMax) {
-					trueRangeYMax = py;
+			for(const lineData of lines) {
+				for(const point of lineData.points) {
+					px = point[0];
+					py = point[1];
+					if(px < trueRangeXMin) {
+						trueRangeXMin = px;
+					} else if(px > trueRangeXMax) {
+						trueRangeXMax = px;
+					}
+					if(py < trueRangeYMin) {
+						trueRangeYMin = py;
+					} else if(py > trueRangeYMax) {
+						trueRangeYMax = py;
+					}
 				}
 			}
 			if(xMin == null) {
@@ -173,40 +261,22 @@ export class Graph extends Component<Props,State> {
 		];
 	}
 
+
+
 	draw(context: CanvasRenderingContext2D) {
 		// get props
+		const props = this.props;
 		const {
-			data, width, height,
+			lines, width, height,
 			gridSpacingX, gridSpacingY,
-			dataPaddingX, dataPaddingY,
-			paddingLeft, paddingRight,
-			xMin, xMax, yMin, yMax,
-			backgroundFillStyle, gridStrokeStyle, lineStrokeStyle, fillStyle,
-			showDots, dotsFillStyle, dotRadius } = this.props;
-
-		// calculate graph rect
-		const graphCanvasRect: Rect = {left: (paddingLeft ?? 0), top: 0, right: (width - (paddingRight ?? 0)), bottom: height}
-
-		// calculate visual data range
-		let xMinPadding = 0;
-		let xMaxPadding = 0;
-		if(typeof dataPaddingX == 'number') {
-			xMinPadding = dataPaddingX;
-			xMaxPadding = dataPaddingX;
-		} else if(dataPaddingX) {
-			xMinPadding = dataPaddingX[0];
-			xMaxPadding = dataPaddingX[1];
-		}
-		let yMinPadding = 0;
-		let yMaxPadding = 1;
-		if(typeof dataPaddingY == 'number') {
-			yMinPadding = dataPaddingY;
-			yMaxPadding = dataPaddingY;
-		} else if(dataPaddingY) {
-			yMinPadding = dataPaddingY[0];
-			yMaxPadding = dataPaddingY[1];
-		}
-		const { x: rangeX, y: rangeY } = this.calculateVisibleRange(data, xMin, xMax, yMin, yMax, xMinPadding, xMaxPadding, yMinPadding, yMaxPadding);
+			backgroundFillStyle, gridStrokeStyle,
+			 } = this.props;
+		const layoutProps = this.calculateLayoutProps(props);
+		const { dataRangeX, dataRangeY, rect } = layoutProps;
+		const dataWidth = dataRangeX[1] - dataRangeX[0];
+		const dataHeight = dataRangeY[1] - dataRangeY[0];
+		const graphWidth = rect.right - rect.left;
+		const graphHeight = rect.bottom - rect.top;
 		
 		// clear canvas
 		context.clearRect(0, 0, width, height);
@@ -214,35 +284,67 @@ export class Graph extends Component<Props,State> {
 		// draw background
 		if(backgroundFillStyle) {
 			context.fillStyle = backgroundFillStyle;
-			context.fillRect(0,0,width,height);
+			context.fillRect(
+				rect.left,
+				rect.top,
+				rect.right-layoutProps.rect.left,
+				rect.bottom-layoutProps.rect.top);
 		}
 		
 		// draw grid
 		if(gridSpacingX || gridSpacingY) {
 			context.strokeStyle = gridStrokeStyle ?? 'lightgray';
-			this.drawGrid(context, graphCanvasRect, gridSpacingX, gridSpacingY, rangeX, rangeY);
+			this.drawGrid(context, layoutProps, gridSpacingX, gridSpacingY);
 		}
 		
 		// draw line, fill, and dots
-		if(data && data.length > 0) {
-			context.strokeStyle = lineStrokeStyle ?? 'black';
-			this.drawLine(context, graphCanvasRect, data, rangeX, rangeY);
-			context.fillStyle = fillStyle ?? 'rgba(140,140,140,0.5)';
-			this.drawFill(context, graphCanvasRect, data, rangeX, rangeY);
-			if(showDots ?? true) {
-				context.fillStyle = dotsFillStyle ?? 'black';
-				this.drawDots(context, graphCanvasRect, data, rangeX, rangeY, dotRadius ?? 3);
+		const sharedLabelProps: LabelProps = {
+			labelFont: props.labelFont,
+			labelTextBaseline: props.labelTextBaseline,
+			labelTextAlign: props.labelTextAlign,
+			labelFillStyle: props.labelFillStyle,
+			minLabelInterval: props.minLabelInterval,
+			getLabelText: props.getLabelText
+		};
+		for(const lineData of lines) {
+			const points = lineData.points;
+			if(points && points.length > 0) {
+				const canvasPoints: [number,number][] = [];
+				for(const point of points) {
+					const canvasPoint: [number,number] = [
+						rect.left + (((point[0] - dataRangeX[0]) / dataWidth) * graphWidth),
+						rect.top + (graphHeight - ((point[1] - dataRangeY[0]) / dataHeight) * graphHeight)
+					];
+					canvasPoints.push(canvasPoint);
+				}
+				context.strokeStyle = lineData.strokeStyle ?? 'black';
+				this.drawLine(context, points, canvasPoints);
+				context.fillStyle = lineData.fillStyle ?? 'rgba(140,140,140,0.5)';
+				this.drawFill(context, rect, points, canvasPoints);
+				if(lineData.showDots ?? true) {
+					context.fillStyle = lineData.dotsFillStyle ?? 'black';
+					this.drawDots(context, canvasPoints, lineData.dotRadius ?? 3);
+				}
+				const showLabels = lineData.showLabels ?? props.showLabels ?? (lineData.getLabelText != null || props.getLabelText != null);
+				if(showLabels) {
+					const labelProps = {...sharedLabelProps}
+					for(const propName in sharedLabelProps) {
+						const overrideProp = lineData[propName];
+						if(overrideProp != null) {
+							labelProps[propName] = overrideProp;
+						}
+					}
+					this.drawLabels(context, points, canvasPoints, labelProps);
+				}
 			}
 		}
 	}
 
-	drawGrid(context: CanvasRenderingContext2D, rect: Rect,
-		gridSpacingX: number | null | undefined, gridSpacingY: number | null | undefined,
-		dataRangeX: [number,number],
-		dataRangeY: [number,number]) {
+	drawGrid(context: CanvasRenderingContext2D, layoutProps: LayoutProps, gridSpacingX: number | null | undefined, gridSpacingY: number | null | undefined) {
 		if(!gridSpacingX && !gridSpacingY) {
 			return;
 		}
+		const { rect, dataRangeX, dataRangeY } = layoutProps;
 		context.beginPath();
 		if(gridSpacingX) {
 			const graphWidth = rect.right - rect.left;
@@ -270,36 +372,41 @@ export class Graph extends Component<Props,State> {
 		context.closePath();
 	}
 
-	drawLine(context: CanvasRenderingContext2D, rect: Rect, data: [number,number][], dataRangeX: [number,number], dataRangeY: [number,number]) {
-		if(data.length == 0) {
+	drawLine(context: CanvasRenderingContext2D, points: [number,number][], canvasPoints: [number,number][]) {
+		console.assert(points.length == canvasPoints.length);
+		const pointsCount = points.length;
+		if(pointsCount == 0) {
 			return;
 		}
 		context.beginPath();
 		const lineWidthOffset = ((context.lineWidth + 1) % 2) / 2;
 		let prevPoint: [number,number] | undefined = undefined;
-		for(let i=0; i<data.length; i++) {
-			const point = data[i];
-			const [canvasPointX, canvasPointY] = this.calculateCanvasPoint(point, dataRangeX, dataRangeY, rect);
+		let i=0;
+		for(const point of points) {
+			const canvasPoint = canvasPoints[i];
 			if(!prevPoint || point[0] < prevPoint[0]) {
 				// since we have no previous point, or this point is before the previous point, start a new line
-				context.moveTo(canvasPointX + lineWidthOffset, canvasPointY);
+				context.moveTo(canvasPoint[0] + lineWidthOffset, canvasPoint[1]);
 			} else {
 				// draw a line to this new point
-				context.lineTo(canvasPointX + lineWidthOffset, canvasPointY);
+				context.lineTo(canvasPoint[0] + lineWidthOffset, canvasPoint[1]);
 			}
 			prevPoint = point;
+			i++;
 		}
 		context.stroke();
 		context.closePath();
 	}
 
-	drawFill(context: CanvasRenderingContext2D, rect: Rect, data: [number,number][], dataRangeX: [number,number], dataRangeY: [number,number]) {
-		if(data.length == 0) {
+	drawFill(context: CanvasRenderingContext2D, rect: Rect, points: [number,number][], canvasPoints: [number,number][]) {
+		const pointsCount = points.length;
+		if(pointsCount == 0) {
 			return;
 		}
 		context.beginPath();
 		let firstCanvasPoint: [number,number] | undefined = undefined;
 		let prevCanvasPoint: [number,number] | undefined = undefined;
+		let prevPoint: [number,number] | undefined = undefined;
 		let lowestCanvasY: number = rect.bottom;
 		const finishLastSection = () => {
 			const p0 = firstCanvasPoint as [number,number];
@@ -308,45 +415,85 @@ export class Graph extends Component<Props,State> {
 			context.lineTo(p0[0], lowestCanvasY);
 			context.lineTo(p0[0], p0[1]);
 		};
-		for(let i=0; i<data.length; i++){
-			const point = data[i];
-			const [canvasPointX, canvasPointY] = this.calculateCanvasPoint(point, dataRangeX, dataRangeY, rect);
-			if(!prevCanvasPoint) {
+		let i=0;
+		for(const point of points) {
+			const canvasPoint = canvasPoints[i];
+			if(!prevPoint) {
 				// first point
-				firstCanvasPoint = [canvasPointX,canvasPointY];
-				context.moveTo(canvasPointX, canvasPointY);
-			} else if(canvasPointX < prevCanvasPoint[0]) {
+				firstCanvasPoint = canvasPoint;
+				context.moveTo(canvasPoint[0], canvasPoint[1]);
+			} else if(point[0] < prevPoint[0]) {
 				// finish old chunk
 				finishLastSection();
 				// new chunk
-				firstCanvasPoint = [canvasPointX,canvasPointY];
-				context.moveTo(canvasPointX, canvasPointY);
+				firstCanvasPoint = canvasPoint;
+				context.moveTo(canvasPoint[0], canvasPoint[1]);
 			} else {
 				// draw a line to this new point
-				context.lineTo(canvasPointX, canvasPointY);
+				context.lineTo(canvasPoint[0], canvasPoint[1]);
 			}
-			if(lowestCanvasY < canvasPointY) {
-				lowestCanvasY = canvasPointY;
+			if(lowestCanvasY < canvasPoint[1]) {
+				lowestCanvasY = canvasPoint[1];
 			}
-			prevCanvasPoint = [canvasPointX,canvasPointY];
+			prevPoint = point;
+			prevCanvasPoint = canvasPoint;
+			i++;
 		}
-		finishLastSection()
+		finishLastSection();
 		context.fill();
 		context.closePath();
 	}
-
-	drawDots(context: CanvasRenderingContext2D, rect: Rect, data: [number,number][], dataRangeX: [number,number], dataRangeY: [number,number], dotRadius: number) {
-		for(var i=0; i<data.length; i++){
-			const point = data[i];
-			const [canvasPointX, canvasPointY] = this.calculateCanvasPoint(point, dataRangeX, dataRangeY, rect);
+	
+	drawDots(context: CanvasRenderingContext2D, canvasPoints: [number,number][], dotRadius: number) {
+		if(canvasPoints.length == 0) {
+			return;
+		}
+		for(const canvasPoint of canvasPoints) {
 			context.beginPath();
-			context.arc(canvasPointX + 0.5, canvasPointY - 0.5, dotRadius, 0, Math.PI*2, true);
+			context.arc(canvasPoint[0] + 0.5, canvasPoint[1] - 0.5, dotRadius, 0, Math.PI*2, true);
 			context.fill();
 			context.closePath();
 		}
 	}
 
-	
+	drawLabels(context: CanvasRenderingContext2D, points: [number,number][], canvasPoints: [number,number][], labelProps: LabelProps) {
+		const pointsCount = points.length;
+		if(pointsCount == 0) {
+			return;
+		}
+		let i=0;
+		for(const point of points){
+			const canvasPoint = canvasPoints[i];
+			this.drawLabel(context, point, canvasPoint, labelProps);
+			i++;
+		}
+	}
+
+	drawLabel(context: CanvasRenderingContext2D, point: [number,number], canvasPoint: [number,number], labelProps: LabelProps) {
+		context.save();
+		if(labelProps.labelTextAlign) {
+			context.textAlign = labelProps.labelTextAlign;
+		}
+		if(labelProps.labelTextBaseline) {
+			context.textBaseline = labelProps.labelTextBaseline;
+		}
+		if(labelProps.labelFont) {
+			context.font = labelProps.labelFont;
+		}
+		if(labelProps.labelFillStyle) {
+			context.fillStyle = labelProps.labelFillStyle;
+		}
+		let text;
+		if(labelProps.getLabelText) {
+			text = labelProps.getLabelText(point[0], point[1]);
+		} else {
+			text = `(${point[0]}, ${point[1]})`;
+		}
+		const labelX = canvasPoint[0];
+		const labelY = canvasPoint[1];
+		context.fillText(text, labelX, labelY);
+		context.restore();
+	}
 
 
 
