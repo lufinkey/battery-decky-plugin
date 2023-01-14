@@ -29,7 +29,10 @@ function App() {
 								[5, 2],
 								[6, 3]
 							],
-							showLabels: true
+							showLabels: true,
+							labelTextAlign: 'center',
+							labelFillStyle: 'white',
+							labelOffsetY: -8
 						}
 					]}
 					width={500}

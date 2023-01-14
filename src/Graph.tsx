@@ -9,7 +9,7 @@ type Rect = {
 	bottom: number
 };
 
-type LabelFillStyle = 'string' | CanvasGradient | CanvasPattern;
+type LabelFillStyle = string | CanvasGradient | CanvasPattern;
 
 type LabelProps = {
 	labelFont?: string
@@ -457,7 +457,12 @@ export class Graph extends Component<Props,State> {
 			return;
 		}
 		let i=0;
+		let lastLabelX: number | undefined = undefined;
 		for(const point of points){
+			// ensure labels are spaced out by min interval
+			if(labelProps.minLabelInterval && lastLabelX != null && point[0] < (lastLabelX + labelProps.minLabelInterval)) {
+				continue;
+			}
 			const canvasPoint = canvasPoints[i];
 			this.drawLabel(context, point, canvasPoint, labelProps);
 			i++;
