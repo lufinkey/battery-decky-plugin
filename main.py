@@ -12,7 +12,7 @@ from upower_monitor import UPowerMonitor, UPowerMonitorEventHeader, UPowerDevice
 from power_history import PowerHistoryDB, BatteryStateLog
 from sleep_inhibit import SleepInhibitor
 
-DATA_DIR = "/var/local/battery-analytics-decky"
+DATA_DIR = "/home/deck/.battery-analytics-decky"
 
 logging.basicConfig(filename="/tmp/template.log",
 					format='[Template] %(asctime)s %(levelname)s %(message)s',
