@@ -26,6 +26,7 @@ class Plugin:
 	db: PowerHistoryDB = None
 	sleep_inhibitor: SleepInhibitor = None
 
+
 	# Asyncio-compatible long-running code, executed in a task when the plugin is loaded
 	async def _main(self):
 		logger.info("Loading Battery Info plugin")
