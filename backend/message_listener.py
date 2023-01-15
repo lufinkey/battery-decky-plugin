@@ -48,6 +48,10 @@ class MessageListener:
 					break
 				else:
 					break
-			data = json.loads(line.decode("utf-8"))
+			try:
+				data = json.loads(line.decode("utf-8"))
+			except BaseException as error:
+				logger.error(str(error))
+				continue
 			self._loop.call_soon_threadsafe(self._callback, args=(data))
 

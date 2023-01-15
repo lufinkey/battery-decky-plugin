@@ -10,9 +10,9 @@ import logging
 sys.path.append(PLUGIN_DIR+"/backend")
 from upower_monitor import UPowerMonitor, UPowerMonitorEventHeader, UPowerDeviceInfo
 from power_history import PowerHistoryDB, BatteryStateLog
-from message_listener import MessageListener
+from sleep_inhibit import SleepInhibitor
 
-DATA_DIR = "/home/deck/.battery-analytics-decky"
+DATA_DIR = "/var/local/battery-analytics-decky"
 
 logging.basicConfig(filename="/tmp/template.log",
 					format='[Template] %(asctime)s %(levelname)s %(message)s',
@@ -24,17 +24,22 @@ logger.setLevel(logging.INFO) # can be changed to logging.DEBUG for debugging is
 class Plugin:
 	monitor: UPowerMonitor = None
 	db: PowerHistoryDB = None
-	message_listener: MessageListener = None
+	sleep_inhibitor: SleepInhibitor = None
 
 	# Asyncio-compatible long-running code, executed in a task when the plugin is loaded
 	async def _main(self):
 		logger.info("Loading Battery Info plugin")
+		# connect DB
 		if self.db is None:
 			self.db = PowerHistoryDB(dir=DATA_DIR)
 		await self.db.connect()
-		if self.message_listener is not None:
-			self.message_listener = MessageListener("/tmp/deck-battery-analytics", self._when_message_received)
-		await self.message_listener.open()
+		# start message listener
+		if self.sleep_inhibitor is not None:
+			self.sleep_inhibitor = SleepInhibitor()
+		self.sleep_inhibitor.when_system_suspend = self._when_system_suspended
+		self.sleep_inhibitor.when_system_resume = self._when_system_resumed
+		await self.sleep_inhibitor.inhibit()
+		# start device monitor
 		if self.monitor is None:
 			self.monitor = UPowerMonitor()
 			self.monitor.when_device_updated = self._when_device_updated
@@ -44,8 +49,13 @@ class Plugin:
 	# Function called first during the unload process, utilize this to handle your plugin being removed
 	async def _unload(self):
 		logger.info("Unloading Battery Info plugin")
+		# stop device monitor
 		if self.monitor is not None:
 			self.monitor.stop()
+		# stop sleep inhibitor
+		if self.sleep_inhibitor is not None:
+			self.sleep_inhibitor.uninhibit()
+		# close db
 		if self.db is not None:
 			await self.db.close()
 	
@@ -94,9 +104,9 @@ class Plugin:
 			return
 		evt = data["event"]
 		if evt == "system-suspend":
-			self._when_system_suspended()
+			self._when_system_suspended(data.get("arg", None))
 		elif evt == "system-resume":
-			self._when_system_resumed()
+			self._when_system_resumed(data.get("arg", None))
 		else:
 			logger.error("Unknown event "+str(evt))
 
