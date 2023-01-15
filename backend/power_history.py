@@ -187,7 +187,7 @@ class PowerHistoryDB:
 		connection.commit()
 	
 
-
+	
 	async def connect(self):
 		return await self._db_loop_op(self._connect)
 	def _connect(self):

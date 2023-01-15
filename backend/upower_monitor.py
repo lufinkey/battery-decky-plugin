@@ -346,13 +346,14 @@ class UPowerDeviceInfo:
 		return UPowerDeviceBatteryInfo(batt_info)
 
 
+
 class UPowerMonitor:
 	main_loop: asyncio.AbstractEventLoop
 	monitor_proc: subprocess.Popen = None
 	monitor_reader_thread: threading.Thread = None
 	last_logtime: datetime.datetime = None
 	device_infos: Dict[str,UPowerDeviceInfo] = dict()
-	when_device_updated: Callable[[datetime.datetime, UPowerMonitorEventHeader, UPowerDeviceInfo], None] = None
+	when_device_updated: Callable[[datetime.datetime, str, UPowerDeviceInfo], None] = None
 	
 	def __init__(self):
 		self.main_loop = asyncio.get_running_loop()
@@ -438,17 +439,18 @@ class UPowerMonitor:
 				self.monitor_reader_thread = None
 	
 	def on_monitor_device_update(self, logtime_utc: datetime.datetime, header: UPowerMonitorEventHeader, new_info: UPowerDeviceInfo):
-		if header.event_value is not None and len(header.event_value) > 0:
-			if header.event_value in self.device_infos:
-				new_device_info = self.device_infos[header.event_value].copy()
+		device_path = header.event_value
+		if device_path is not None and len(device_path) > 0:
+			if device_path in self.device_infos:
+				new_device_info = self.device_infos[device_path].copy()
 				new_device_info.merge_from(new_info)
 			else:
-				logger.warn("new device entry "+header.event_value)
+				logger.warn("new device entry "+device_path)
 				new_device_info = new_info
-			self.device_infos[header.event_value] = new_device_info
+			self.device_infos[device_path] = new_device_info
 			# call device update event property
 			if self.when_device_updated is not None:
-				self.when_device_updated(logtime_utc, header, new_device_info)
+				self.when_device_updated(logtime_utc, device_path, new_device_info)
 	
 	def on_monitor_end(self):
 		self.monitor_proc = None
@@ -524,7 +526,7 @@ class UPowerMonitor:
 										logtime_utc = tm_from_now
 								# call update event
 								logger.info("got event {} for {} at timestamp {}".format(header.event_type, str(header.event_value), header.logtime.isoformat()))
-								self.main_loop.call_soon_threadsafe(lambda:self.on_monitor_device_update(logtime_utc, header, device_info))
+								self.main_loop.call_soon_threadsafe(self.on_monitor_device_update, args=(logtime_utc, header, device_info))
 					else:
 						# ignore empty line
 						logger.info("Ignoring empty line")

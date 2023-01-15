@@ -2,13 +2,15 @@ import os
 import sys
 PLUGIN_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(PLUGIN_DIR+"/py_modules")
-from typing import Tuple
+import asyncio
+from typing import Tuple, Any
 import datetime
 import logging
 
 sys.path.append(PLUGIN_DIR+"/backend")
-from upower_monitor import UPowerMonitor
-from power_history import PowerHistoryDB
+from upower_monitor import UPowerMonitor, UPowerMonitorEventHeader, UPowerDeviceInfo
+from power_history import PowerHistoryDB, BatteryStateLog
+from message_listener import MessageListener
 
 DATA_DIR = "/home/deck/.battery-analytics-decky"
 
@@ -22,6 +24,7 @@ logger.setLevel(logging.INFO) # can be changed to logging.DEBUG for debugging is
 class Plugin:
 	monitor: UPowerMonitor = None
 	db: PowerHistoryDB = None
+	message_listener: MessageListener = None
 
 	# Asyncio-compatible long-running code, executed in a task when the plugin is loaded
 	async def _main(self):
@@ -29,8 +32,12 @@ class Plugin:
 		if self.db is None:
 			self.db = PowerHistoryDB(dir=DATA_DIR)
 		await self.db.connect()
+		if self.message_listener is not None:
+			self.message_listener = MessageListener("/tmp/deck-battery-analytics", self._when_message_received)
+		await self.message_listener.open()
 		if self.monitor is None:
 			self.monitor = UPowerMonitor()
+			self.monitor.when_device_updated = self._when_device_updated
 		self.monitor.start()
 	
 	
@@ -63,7 +70,7 @@ class Plugin:
 			if group_by_interval_start is None:
 				logger.warn("group_by_interval_start should be specified if group_by_interval is specified")
 				utcnow = datetime.datetime.utcnow()
-				group_by_interval_start = datetime.datetime(year=utcnow.year, month=utcnow.month, day=utcnow.day)
+				group_by_interval_start = datetime.datetime(year=utcnow.year, month=utcnow.month, day=utcnow.day, tzinfo=utcnow.tzinfo)
 			group_by_interval: Tuple[datetime.datetime, int] = (group_by_interval_start, group_by_interval)
 		logs = await self.db.get_battery_state_logs(
 			time_start = time_start,
@@ -76,3 +83,26 @@ class Plugin:
 		for log in logs:
 			logs_arr.append(log.to_dict())
 		return logs_arr
+	
+	def _when_device_updated(self, logtime: datetime.datetime, device_path: str, device_info: UPowerDeviceInfo):
+		loop = asyncio.get_event_loop()
+		loop.create_task(self.db.log_device_info(logtime, device_path, device_info))
+	
+	def _when_message_received(self, data: Any):
+		if not isinstance(data,dict) or "event" not in data:
+			logger.error("Invalid message received: "+str(data))
+			return
+		evt = data["event"]
+		if evt == "system-suspend":
+			self._when_system_suspended()
+		elif evt == "system-resume":
+			self._when_system_resumed()
+		else:
+			logger.error("Unknown event "+str(evt))
+
+	def _when_system_suspended(self):
+		pass
+
+	def _when_system_resumed(self):
+		pass
+
