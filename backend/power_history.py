@@ -142,6 +142,52 @@ class BatteryStateLog:
 
 
 
+@dataclass
+class SystemEventLog:
+	time: datetime.datetime
+	event: str
+
+	@classmethod
+	def get_sql_tablename(cls):
+		return "SystemEventLog"
+
+	@classmethod
+	def get_sql_createtable(cls):
+		tblname = cls.get_sql_tablename()
+		return '''CREATE TABLE IF NOT EXISTS {} (
+			time TIMESTAMP NOT NULL,
+			event TEXT NOT NULL
+			PRIMARY KEY(device_path, time)
+		)'''.format(tblname)
+	
+	@classmethod
+	def from_dbtuple(cls, dbtuple: tuple):
+		(
+			time,
+			event) = dbtuple
+		return BatteryStateLog(
+			time = time,
+			event = event)
+	
+	def to_dbtuple(self) -> tuple:
+		return (
+			self.time,
+			self.event)
+	
+	@classmethod
+	def from_dict(cls, d: dict) -> 'BatteryStateLog':
+		return BatteryStateLog(
+			time = d['time'],
+			event = d['event'])
+	
+	def to_dict(self) -> dict:
+		return {
+			'time': self.time,
+			'event': self.event
+		}
+
+
+
 class PowerHistoryDB:
 	db_loop: asyncio.AbstractEventLoop = None
 	connection: sqlite3.Connection = None
@@ -187,7 +233,7 @@ class PowerHistoryDB:
 		connection.commit()
 	
 
-	
+
 	async def connect(self):
 		return await self._db_loop_op(self._connect)
 	def _connect(self):
@@ -298,3 +344,55 @@ class PowerHistoryDB:
 		for record in records:
 			batt_state_logs.append(BatteryStateLog.from_dbtuple(record))
 		return batt_state_logs
+	
+	async def add_system_event_log(self, system_evt_log: SystemEventLog) -> list:
+		return await self._db_loop_op(lambda:self._add_battery_state_log(system_evt_log))
+	def _add_system_event_log(self, system_evt_log: SystemEventLog) -> list:
+		tblname = SystemEventLog.get_sql_tablename()
+		sql = '''INSERT OR REPLACE INTO {} VALUES(?)'''.format(tblname)
+		data = [ system_evt_log.to_dbtuple() ]
+		return self._commit_sql(sql, data)
+	
+	async def get_system_event_logs(self,
+		time_start: datetime.datetime = None,
+		time_start_incl: bool = True,
+		time_end: datetime.datetime = None,
+		time_end_incl: bool = False) -> List[SystemEventLog]:
+		return await self._db_loop_op(lambda:self._get_system_event_logs(
+			time_start = time_start,
+			time_start_incl = time_start_incl,
+			time_end = time_end,
+			time_end_incl = time_end_incl))
+	def _get_system_event_logs(self,
+		time_start: datetime.datetime = None,
+		time_start_incl: bool = True,
+		time_end: datetime.datetime = None,
+		time_end_incl: bool = False) -> List[SystemEventLog]:
+		tblname = SystemEventLog.get_sql_tablename()
+		params = []
+		sql = 'SELECT * FROM '+tblname
+		# check if where clause is needed
+		if time_start is not None or time_end is not None:
+			sql += ' WHERE '
+			clause_count = 0
+			if time_start is not None:
+				if time_start_incl:
+					sql += 'time >= ?'
+				else:
+					sql += 'time > ?'
+				params.append(time_start)
+				clause_count += 1
+			if time_end is not None:
+				if clause_count > 0:
+					sql += ' AND '
+				if time_end_incl:
+					sql += 'time <= ?'
+				else:
+					sql += 'time < ?'
+				params.append(time_end)
+				clause_count += 1
+		records = self._fetch_sql(sql, params)
+		system_evt_logs = []
+		for record in records:
+			system_evt_logs.append(SystemEventLog.from_dbtuple(record))
+		return system_evt_logs

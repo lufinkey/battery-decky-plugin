@@ -9,7 +9,7 @@ import logging
 
 sys.path.append(PLUGIN_DIR+"/backend")
 from upower_monitor import UPowerMonitor, UPowerMonitorEventHeader, UPowerDeviceInfo
-from power_history import PowerHistoryDB, BatteryStateLog
+from power_history import PowerHistoryDB, BatteryStateLog, SystemEventLog
 from sleep_inhibit import SleepInhibitor
 
 DATA_DIR = "/home/deck/.battery-analytics-decky"
@@ -29,11 +29,12 @@ class Plugin:
 	# Asyncio-compatible long-running code, executed in a task when the plugin is loaded
 	async def _main(self):
 		logger.info("Loading Battery Info plugin")
+		utcnow = datetime.datetime.utcnow()
 		# connect DB
 		if self.db is None:
 			self.db = PowerHistoryDB(dir=DATA_DIR)
 		await self.db.connect()
-		# start message listener
+		# start sleep inhibitor
 		if self.sleep_inhibitor is not None:
 			self.sleep_inhibitor = SleepInhibitor()
 		self.sleep_inhibitor.when_system_suspend = self._when_system_suspended
@@ -44,14 +45,19 @@ class Plugin:
 			self.monitor = UPowerMonitor()
 			self.monitor.when_device_updated = self._when_device_updated
 		self.monitor.start()
+		# log plugin load
+		await self.db.add_system_event_log(SystemEventLog(utcnow, "plugin-load"))
 	
 	
 	# Function called first during the unload process, utilize this to handle your plugin being removed
 	async def _unload(self):
 		logger.info("Unloading Battery Info plugin")
+		utcnow = datetime.datetime.utcnow()
 		# stop device monitor
 		if self.monitor is not None:
 			self.monitor.stop()
+		# log plugin unload
+		await self.db.add_system_event_log(SystemEventLog(utcnow, "plugin-unload"))
 		# stop sleep inhibitor
 		if self.sleep_inhibitor is not None:
 			self.sleep_inhibitor.uninhibit()
@@ -94,25 +100,37 @@ class Plugin:
 			logs_arr.append(log.to_dict())
 		return logs_arr
 	
+	async def get_system_event_logs(self,
+		time_start: str = None,
+		time_start_incl: bool = True,
+		time_end: str = None,
+		time_end_incl: bool = False):
+		if self.db is None:
+			logger.error("DB has not been created")
+		if time_start is not None:
+			time_start: datetime.datetime = datetime.datetime.fromisoformat(time_start)
+		if time_end is not None:
+			time_end: datetime.datetime = datetime.datetime.fromisoformat(time_end)
+		logs = await self.db.get_system_event_logs(
+			time_start = time_start,
+			time_start_incl = time_start_incl,
+			time_end = time_end,
+			time_end_incl = time_end_incl)
+		logs_arr = list()
+		for log in logs:
+			logs_arr.append(log.to_dict())
+		return logs_arr
+	
 	def _when_device_updated(self, logtime: datetime.datetime, device_path: str, device_info: UPowerDeviceInfo):
 		loop = asyncio.get_event_loop()
 		loop.create_task(self.db.log_device_info(logtime, device_path, device_info))
 	
-	def _when_message_received(self, data: Any):
-		if not isinstance(data,dict) or "event" not in data:
-			logger.error("Invalid message received: "+str(data))
-			return
-		evt = data["event"]
-		if evt == "system-suspend":
-			self._when_system_suspended(data.get("arg", None))
-		elif evt == "system-resume":
-			self._when_system_resumed(data.get("arg", None))
-		else:
-			logger.error("Unknown event "+str(evt))
+	def _when_system_suspended(self, time: datetime.datetime):
+		self.db.add_system_event_log(SystemEventLog(time, "suspend"))
 
-	def _when_system_suspended(self):
-		pass
-
-	def _when_system_resumed(self):
-		pass
+	def _when_system_resumed(self, time: datetime.datetime):
+		self.db.add_system_event_log(SystemEventLog(time, "resume"))
+	
+	def _when_system_shutdown(self, time: datetime.datetime):
+		self.db.add_system_event_log(SystemEventLog(time, "shutdown"))
 

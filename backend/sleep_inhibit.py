@@ -1,16 +1,17 @@
 import os
 import sys
 import dbus
+import datetime
 import logging
 from typing import Callable
 
 logger = logging.getLogger()
 
 class SleepInhibitor:
-	when_system_suspend: Callable = None
-	when_system_resume: Callable = None
+	when_system_suspend: Callable[[datetime.datetime]] = None
+	when_system_resume: Callable[[datetime.datetime]] = None
 
-	when_system_shutdown: Callable = None
+	when_system_shutdown: Callable[[datetime.datetime]] = None
 
 	def __init__(self):
 		self.fd = None
@@ -33,6 +34,7 @@ class SleepInhibitor:
 		self.fd = None
 	
 	def signal_handler(self, suspending: bool, signal: str = None):
+		utcnow = datetime.datetime.utcnow()
 		if suspending:
 			# going to suspend or shutdown
 			logger.log("going down for suspend? "+str(signal))
@@ -40,7 +42,7 @@ class SleepInhibitor:
 				# shutting down
 				try:
 					if self.when_system_shutdown is not None:
-						self.when_system_shutdown()
+						self.when_system_shutdown(utcnow)
 				except BaseException as error:
 					print(str(error), file=sys.stderr)
 					logger.error(str(error))
@@ -48,7 +50,7 @@ class SleepInhibitor:
 				# sleeping
 				try:
 					if self.when_system_suspend is not None:
-						self.when_system_suspend()
+						self.when_system_suspend(utcnow)
 				except BaseException as error:
 					print(str(error), file=sys.stderr)
 					logger.error(str(error))
@@ -59,7 +61,7 @@ class SleepInhibitor:
 				self.inhibit()
 				try:
 					if self.when_system_resume is not None:
-						self.when_system_resume()
+						self.when_system_resume(utcnow)
 				except BaseException as error:
 					print(str(error), file=sys.stderr)
 					logger.error(str(error))
