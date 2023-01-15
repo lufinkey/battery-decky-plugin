@@ -31,11 +31,13 @@ function App() {
 							],
 							lineWidth: 2,
 							strokeStyle: 'lightblue',
-							showLabels: true,
+							fill: true,
 							
+							showDots: true,
 							dotRadius: 5,
 							dotsFillStyle: 'lightblue',
-
+							
+							showLabels: true,
 							labelTextAlign: 'center',
 							labelFillStyle: 'white',
 							labelOffsetY: -8

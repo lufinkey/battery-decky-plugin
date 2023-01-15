@@ -23,12 +23,13 @@ export const MainPage: VFC<{ serverAPI: ServerAPI }> = ({}) => {
 								[6, 3]
 							],
 							lineWidth: 2,
+							fill: true,
 							strokeStyle: 'lightblue',
-							showLabels: true,
 							
 							dotRadius: 5,
 							dotsFillStyle: 'lightblue',
-
+							
+							showLabels: true,
 							labelTextAlign: 'center',
 							labelFillStyle: 'white',
 							labelOffsetY: -8

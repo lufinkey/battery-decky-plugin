@@ -21,14 +21,14 @@ export type SystemEventLog = {
 };
 
 
-type TimeRangeArgs = {
-	timeStart?: string | Date,
-	timeStartIncl?: boolean,
-	timeEnd?: string | Date,
+export type TimeRangeArgs = {
+	timeStart?: string | Date
+	timeStartIncl?: boolean
+	timeEnd?: string | Date
 	timeEndIncl?: boolean
 };
 
-type TimeGroupArgs = {
+export type TimeGroupArgs = {
 	groupByIntervalStart?: string | Date
 	groupByInterval?: number
 	preferGroupFirst?: boolean
@@ -41,9 +41,9 @@ type BackendTimeGroupArgs = {
 };
 
 type BackendTimeRangeArgs = {
-	time_start?: string,
-	time_start_incl?: boolean,
-	time_end?: string,
+	time_start?: string
+	time_start_incl?: boolean
+	time_end?: string
 	time_end_incl?: boolean
 };
 

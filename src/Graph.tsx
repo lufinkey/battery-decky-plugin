@@ -17,17 +17,16 @@ type LabelProps = {
 	labelTextAlign?: CanvasTextAlign
 	labelFillStyle?: LabelFillStyle
 	minLabelInterval?: number
-	getLabelText?: (x: number, y: number) => string
+	getLabelText?: (args: {index: number, x: number, y: number}) => string
 	labelOffsetX?: number
 	labelOffsetY?: number
 };
 
-type LineData = {
-	points: [number,number][]
-	displayName?: string
-
+type LineStyle = {
 	lineWidth?: number
 	strokeStyle?: string
+
+	fill?: boolean
 	fillStyle?: string
 
 	showDots?: boolean
@@ -36,6 +35,12 @@ type LineData = {
 
 	showLabels?: boolean
 } & LabelProps;
+
+type LineData = {
+	points?: [number,number][]
+	pointGroups?: Array<[number,number][]>
+	displayName?: string
+} & LineStyle;
 
 
 
@@ -136,12 +141,32 @@ export class Graph extends Component<Props,State> {
 		let c = 0;
 		let firstPoint: [number,number] | undefined = undefined;
 		for(const lineData of lines) {
-			const pointsLen = lineData.points.length;
-			if(pointsLen > 0) {
-				if(c == 0) {
-					firstPoint = lineData.points[0];
+			const { points, pointGroups } = lineData;
+			if(points) {
+				const pointsLen = points.length;
+				if(pointsLen > 0) {
+					if(c == 0) {
+						firstPoint = points[0];
+					}
+					c += points.length;
+					if(c > 1) {
+						break;
+					}
 				}
-				c += lineData.points.length;
+			}
+			if(pointGroups) {
+				for(const group of pointGroups) {
+					const groupLen = group.length;
+					if(groupLen > 0) {
+						if(c == 0) {
+							firstPoint = group[0];
+						}
+						c += group.length;
+						if(c > 1) {
+							break;
+						}
+					}
+				}
 				if(c > 1) {
 					break;
 				}
@@ -207,18 +232,39 @@ export class Graph extends Component<Props,State> {
 			let trueRangeYMin = py;
 			let trueRangeYMax = py;
 			for(const lineData of lines) {
-				for(const point of lineData.points) {
-					px = point[0];
-					py = point[1];
-					if(px < trueRangeXMin) {
-						trueRangeXMin = px;
-					} else if(px > trueRangeXMax) {
-						trueRangeXMax = px;
+				const { points, pointGroups } = lineData;
+				if(points) {
+					for(const point of points) {
+						px = point[0];
+						py = point[1];
+						if(px < trueRangeXMin) {
+							trueRangeXMin = px;
+						} else if(px > trueRangeXMax) {
+							trueRangeXMax = px;
+						}
+						if(py < trueRangeYMin) {
+							trueRangeYMin = py;
+						} else if(py > trueRangeYMax) {
+							trueRangeYMax = py;
+						}
 					}
-					if(py < trueRangeYMin) {
-						trueRangeYMin = py;
-					} else if(py > trueRangeYMax) {
-						trueRangeYMax = py;
+				}
+				if(pointGroups) {
+					for(const group of pointGroups) {
+						for(const point of group) {
+							px = point[0];
+							py = point[1];
+							if(px < trueRangeXMin) {
+								trueRangeXMin = px;
+							} else if(px > trueRangeXMax) {
+								trueRangeXMax = px;
+							}
+							if(py < trueRangeYMin) {
+								trueRangeYMin = py;
+							} else if(py > trueRangeYMax) {
+								trueRangeYMax = py;
+							}
+						}
 					}
 				}
 			}
@@ -306,7 +352,7 @@ export class Graph extends Component<Props,State> {
 			labelOffsetY: props.labelOffsetY
 		};
 		for(const lineData of lines) {
-			const points = lineData.points;
+			const { points, pointGroups } = lineData;
 			if(points && points.length > 0) {
 				const canvasPoints: [number,number][] = [];
 				for(const point of points) {
@@ -316,29 +362,48 @@ export class Graph extends Component<Props,State> {
 					];
 					canvasPoints.push(canvasPoint);
 				}
-				context.save();
-				context.strokeStyle = lineData.strokeStyle ?? 'black';
-				context.lineWidth = lineData.lineWidth ?? 1;
-				this.drawLine(context, points, canvasPoints);
-				context.fillStyle = lineData.fillStyle ?? 'rgba(140,140,140,0.5)';
-				this.drawFill(context, rect, points, canvasPoints);
-				if(lineData.showDots ?? true) {
-					context.fillStyle = lineData.dotsFillStyle ?? 'black';
-					this.drawDots(context, canvasPoints, lineData.dotRadius ?? 3);
-				}
-				const showLabels = lineData.showLabels ?? props.showLabels ?? (lineData.getLabelText != null || props.getLabelText != null);
-				if(showLabels) {
-					const labelProps = {...sharedLabelProps}
-					for(const propName in sharedLabelProps) {
-						const overrideProp = lineData[propName];
-						if(overrideProp != null) {
-							labelProps[propName] = overrideProp;
-						}
-					}
-					this.drawLabels(context, points, canvasPoints, labelProps);
-				}
-				context.restore();
+				this.drawLinePointGroup(context, rect, sharedLabelProps, lineData, props, points, canvasPoints);
 			}
+			if(pointGroups && pointGroups.length > 0) {
+				for(const group of pointGroups) {
+					const canvasPoints: [number,number][] = [];
+					for(const point of group) {
+						const canvasPoint: [number,number] = [
+							rect.left + (((point[0] - dataRangeX[0]) / dataWidth) * graphWidth),
+							rect.top + (graphHeight - ((point[1] - dataRangeY[0]) / dataHeight) * graphHeight)
+						];
+						canvasPoints.push(canvasPoint);
+					}
+					this.drawLinePointGroup(context, rect, sharedLabelProps, lineData, props, group, canvasPoints);
+				}
+			}
+		}
+		context.restore();
+	}
+
+	drawLinePointGroup(context: CanvasRenderingContext2D, rect: Rect, sharedLabelProps: LabelProps, lineStyle: LineStyle, props: Props, points: [number,number][], canvasPoints: [number,number][]) {
+		context.save();
+		context.strokeStyle = lineStyle.strokeStyle ?? 'black';
+		context.lineWidth = lineStyle.lineWidth ?? 1;
+		this.drawLine(context, points, canvasPoints);
+		if(lineStyle.fill ?? false) {
+			context.fillStyle = lineStyle.fillStyle ?? 'rgba(140,140,140,0.5)';
+			this.drawFill(context, rect, points, canvasPoints);
+		}
+		if(lineStyle.showDots ?? true) {
+			context.fillStyle = lineStyle.dotsFillStyle ?? 'black';
+			this.drawDots(context, canvasPoints, lineStyle.dotRadius ?? 3);
+		}
+		const showLabels = lineStyle.showLabels ?? props.showLabels ?? (lineStyle.getLabelText != null || props.getLabelText != null);
+		if(showLabels) {
+			const labelProps = {...sharedLabelProps}
+			for(const propName in sharedLabelProps) {
+				const overrideProp = lineStyle[propName];
+				if(overrideProp != null) {
+					labelProps[propName] = overrideProp;
+				}
+			}
+			this.drawLabels(context, points, canvasPoints, labelProps);
 		}
 		context.restore();
 	}
@@ -472,12 +537,12 @@ export class Graph extends Component<Props,State> {
 				continue;
 			}
 			const canvasPoint = canvasPoints[i];
-			this.drawLabel(context, point, canvasPoint, labelProps);
+			this.drawLabel(context, i, point, canvasPoint, labelProps);
 			i++;
 		}
 	}
 
-	drawLabel(context: CanvasRenderingContext2D, point: [number,number], canvasPoint: [number,number], labelProps: LabelProps) {
+	drawLabel(context: CanvasRenderingContext2D, index: number, point: [number,number], canvasPoint: [number,number], labelProps: LabelProps) {
 		context.save();
 		if(labelProps.labelTextAlign) {
 			context.textAlign = labelProps.labelTextAlign;
@@ -493,7 +558,7 @@ export class Graph extends Component<Props,State> {
 		}
 		let text;
 		if(labelProps.getLabelText) {
-			text = labelProps.getLabelText(point[0], point[1]);
+			text = labelProps.getLabelText({index, x: point[0], y: point[1] });
 		} else {
 			text = `(${point[0]}, ${point[1]})`;
 		}
