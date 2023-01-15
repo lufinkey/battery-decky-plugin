@@ -1,11 +1,18 @@
 
 import { Component, createRef, RefObject, ClassAttributes } from 'react';
 
-type Props = ClassAttributes<HTMLCanvasElement> & {
+type BaseCanvasProps = ClassAttributes<HTMLCanvasElement> & {
 	width: number;
 	height: number;
+};
+
+type AdditionalCanvasProps = {
+	clearBeforeDraw?: boolean;
 	onDraw?: (canvas: HTMLCanvasElement, context: CanvasRenderingContext2D, props: Props) => void;
 };
+const AdditionalCanvasPropKeys: (keyof AdditionalCanvasProps)[] = ['clearBeforeDraw','onDraw'];
+
+type Props = BaseCanvasProps & AdditionalCanvasProps;
 
 type State = {};
 
@@ -26,26 +33,37 @@ export class Canvas extends Component<Props,State> {
 		this.redraw();
 	}
 
-	redraw() {
-		if(this.props.onDraw) {
+	redraw(forceClear: boolean = false) {
+		const props = this.props;
+		const { onDraw } = props;
+		if(onDraw) {
+			// get canvas ref
 			const canvas = this.canvasRef.current;
 			if(canvas == null) {
 				console.error("No canvas reference");
 				return;
 			}
+			// get rendering context
 			const context = canvas.getContext("2d");
 			if(context == null) {
 				console.error("No 2D rendering context");
 				return;
 			}
-			this.props.onDraw(canvas, context, this.props);
+			// clear canvas if needed
+			if(props.clearBeforeDraw ?? true) {
+				context.clearRect(0, 0, props.width, props.height);
+			}
+			// draw
+			onDraw(canvas, context, props);
 		}
 	}
 	
 	render() {
 		console.log("Canvas.render");
-		const props = {...this.props};
-		delete props.onDraw;
-		return <canvas {...props} ref={this.canvasRef}/>
+		const canvasProps = {...this.props};
+		for(const key in AdditionalCanvasPropKeys) {
+			delete canvasProps[key];
+		}
+		return <canvas {...canvasProps} ref={this.canvasRef}/>
 	}
 }
