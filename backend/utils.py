@@ -93,5 +93,5 @@ class AsyncValue:
 	@classmethod
 	async def run_on_loop(cls, loop: asyncio.AbstractEventLoop, callable: Callable):
 		val = AsyncValue()
-		loop.call_soon_threadsafe(cls._main_sync, args=(val, callable))
+		loop.call_soon_threadsafe(lambda:cls._main_sync(val, callable))
 		return await val.get()

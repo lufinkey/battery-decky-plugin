@@ -8,10 +8,10 @@ from typing import Callable
 logger = logging.getLogger()
 
 class SleepInhibitor:
-	when_system_suspend: Callable[[datetime.datetime]] = None
-	when_system_resume: Callable[[datetime.datetime]] = None
+	when_system_suspend: Callable[[datetime.datetime], None] = None
+	when_system_resume: Callable[[datetime.datetime], None] = None
 
-	when_system_shutdown: Callable[[datetime.datetime]] = None
+	when_system_shutdown: Callable[[datetime.datetime], None] = None
 
 	def __init__(self):
 		self.fd = None

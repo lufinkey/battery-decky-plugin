@@ -1,5 +1,9 @@
 import os
 import sys
+PYTHON_LIB_DIR = '/usr/lib/python{}.{}'.format(sys.version_info[0], sys.version_info[1])
+sys.path.append(PYTHON_LIB_DIR)
+sys.path.append(PYTHON_LIB_DIR+'/lib-dynload')
+sys.path.append(PYTHON_LIB_DIR+'/site-packages')
 PLUGIN_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(PLUGIN_DIR+"/py_modules")
 import asyncio
@@ -8,14 +12,14 @@ import datetime
 import logging
 
 sys.path.append(PLUGIN_DIR+"/backend")
-from upower_monitor import UPowerMonitor, UPowerMonitorEventHeader, UPowerDeviceInfo
-from power_history import PowerHistoryDB, BatteryStateLog, SystemEventLog, SystemEventTypes
+from upower_monitor import UPowerMonitor, UPowerDeviceInfo
+from power_history import PowerHistoryDB, SystemEventLog, SystemEventTypes
 from sleep_inhibit import SleepInhibitor
 
 DATA_DIR = "/home/deck/.battery-analytics-decky"
 
 logging.basicConfig(filename="/tmp/battery-analytics-decky.log",
-					format='[Template] %(asctime)s %(levelname)s %(message)s',
+					format='[BatteryAnalytics] %(asctime)s %(levelname)s %(message)s',
 					filemode='w+',
 					force=True)
 logger=logging.getLogger()
@@ -36,7 +40,7 @@ class Plugin:
 			self.db = PowerHistoryDB(dir=DATA_DIR)
 		await self.db.connect()
 		# start sleep inhibitor
-		if self.sleep_inhibitor is not None:
+		if self.sleep_inhibitor is None:
 			self.sleep_inhibitor = SleepInhibitor()
 		self.sleep_inhibitor.when_system_suspend = self._when_system_suspended
 		self.sleep_inhibitor.when_system_resume = self._when_system_resumed

@@ -526,7 +526,7 @@ class UPowerMonitor:
 										logtime_utc = tm_from_now
 								# call update event
 								logger.info("got event {} for {} at timestamp {}".format(header.event_type, str(header.event_value), header.logtime.isoformat()))
-								self.main_loop.call_soon_threadsafe(self.on_monitor_device_update, args=(logtime_utc, header, device_info))
+								self.main_loop.call_soon_threadsafe(lambda:self.on_monitor_device_update(logtime_utc, header, device_info))
 					else:
 						# ignore empty line
 						logger.info("Ignoring empty line")

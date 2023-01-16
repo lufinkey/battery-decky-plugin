@@ -53,5 +53,5 @@ class MessageListener:
 			except BaseException as error:
 				logger.error(str(error))
 				continue
-			self._loop.call_soon_threadsafe(self._callback, args=(data))
+			self._loop.call_soon_threadsafe(lambda:self._callback(data))
 

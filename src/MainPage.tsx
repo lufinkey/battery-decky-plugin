@@ -18,7 +18,8 @@ export const MainPage: VFC<{ backendAPI: PluginBackend }> = ({ backendAPI }) => 
 					backendAPI={backendAPI}
 					style={{
 						width: '268px',
-						height: '200px'
+						height: '200px',
+						padding: '0px'
 					}}/>
 				<ButtonItem
 					layout="below"
