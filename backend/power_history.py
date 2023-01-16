@@ -249,7 +249,7 @@ class PowerHistoryDB:
 		if self.connection is None:
 			if not os.path.exists(self.dir):
 				os.mkdir(self.dir)
-			self.connection = sqlite3.connect(dir+"/power_history.db")
+			self.connection = sqlite3.connect(self.dir+"/power_history.db")
 		else:
 			logger.warn("DB is already created")
 		# create cursor if needed
