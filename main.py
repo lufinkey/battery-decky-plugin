@@ -14,7 +14,7 @@ from sleep_inhibit import SleepInhibitor
 
 DATA_DIR = "/home/deck/.battery-analytics-decky"
 
-logging.basicConfig(filename="/tmp/template.log",
+logging.basicConfig(filename="/tmp/battery-analytics-decky.log",
 					format='[Template] %(asctime)s %(levelname)s %(message)s',
 					filemode='w+',
 					force=True)
