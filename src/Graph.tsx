@@ -1,5 +1,5 @@
 
-import { Component } from 'react';
+import { Component, CSSProperties } from 'react';
 import { Canvas } from './Canvas';
 
 type Rect = {
@@ -43,7 +43,7 @@ type LineStyle = {
 	showLabels?: boolean
 } & PointLabelProps;
 
-type LineData = {
+export type LineData = {
 	points?: [number,number][]
 	pointGroups?: Array<[number,number][]>
 	displayName?: string
@@ -63,7 +63,7 @@ type AxisLineStyle = {
 	getLabelText?: ValueLabelTextGetter
 } & LabelProps;
 
-type AxisLineData = {
+export type AxisLineData = {
 	points: number[]
 	axis: Axis
 } & AxisLineStyle;
@@ -91,6 +91,8 @@ type Props = {
 	paddingBottom?: number
 	gridStrokeStyle?: string
 	backgroundFillStyle?: string
+
+	style?: CSSProperties
 };
 
 type State = {
@@ -782,10 +784,14 @@ export class Graph extends Component<Props,State> {
 
 	render() {
 		const props = this.props;
+		const width = props.width ?? 268;
+		const height = props.height ?? 200;
 		return (
 			<Canvas
-				width={props.width ?? 100}
-				height={props.height ?? 100}
+				width={width}
+				height={height}
+				style={props.style}
+				clearBeforeDraw={true}
 				onDraw={(canvas, context, props) => {
 					this.draw(context);
 				}}/>

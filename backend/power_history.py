@@ -186,6 +186,14 @@ class SystemEventLog:
 			'event': self.event
 		}
 
+class _SystemEventTypes:
+	PLUGIN_LOAD: str = "plugin-load"
+	PLUGIN_UNLOAD: str = "plugin-unload"
+	SUSPEND: str = "suspend"
+	RESUME: str = "resume"
+	SHUTDOWN: str = "shutdown"
+SystemEventTypes: _SystemEventTypes = _SystemEventTypes()
+
 
 
 class PowerHistoryDB:

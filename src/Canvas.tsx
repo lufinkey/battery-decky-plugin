@@ -1,7 +1,7 @@
 
-import { Component, createRef, RefObject, ClassAttributes } from 'react';
+import { Component, createRef, RefObject, HTMLAttributes } from 'react';
 
-type BaseCanvasProps = ClassAttributes<HTMLCanvasElement> & {
+type BaseCanvasProps = HTMLAttributes<HTMLCanvasElement> & {
 	width: number;
 	height: number;
 };

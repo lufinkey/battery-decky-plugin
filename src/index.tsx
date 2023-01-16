@@ -9,6 +9,7 @@ import { VFC } from 'react';
 import { FaBatteryFull } from 'react-icons/fa';
 
 import { MainPage } from './MainPage';
+import { PluginBackend } from './PluginBackend';
 
 
 const DeckyPluginRouterTest: VFC = () => {
@@ -23,13 +24,14 @@ const DeckyPluginRouterTest: VFC = () => {
 };
 
 export default definePlugin((serverApi: ServerAPI) => {
+	const backendAPI = new PluginBackend(serverApi);
 	serverApi.routerHook.addRoute("/battery-details", DeckyPluginRouterTest, {
 		exact: true,
 	});
 
 	return {
 		title: <div className={staticClasses.Title}>Battery Info</div>,
-		content: <MainPage serverAPI={serverApi} />,
+		content: <MainPage backendAPI={backendAPI} />,
 		icon: <FaBatteryFull />,
 		onDismount() {
 			serverApi.routerHook.removeRoute("/battery-details");

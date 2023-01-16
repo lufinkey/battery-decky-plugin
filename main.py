@@ -9,7 +9,7 @@ import logging
 
 sys.path.append(PLUGIN_DIR+"/backend")
 from upower_monitor import UPowerMonitor, UPowerMonitorEventHeader, UPowerDeviceInfo
-from power_history import PowerHistoryDB, BatteryStateLog, SystemEventLog
+from power_history import PowerHistoryDB, BatteryStateLog, SystemEventLog, SystemEventTypes
 from sleep_inhibit import SleepInhibitor
 
 DATA_DIR = "/home/deck/.battery-analytics-decky"
@@ -47,7 +47,7 @@ class Plugin:
 			self.monitor.when_device_updated = self._when_device_updated
 		self.monitor.start()
 		# log plugin load
-		await self.db.add_system_event_log(SystemEventLog(utcnow, "plugin-load"))
+		await self.db.add_system_event_log(SystemEventLog(utcnow, SystemEventTypes.PLUGIN_LOAD))
 	
 	
 	# Function called first during the unload process, utilize this to handle your plugin being removed
@@ -58,7 +58,7 @@ class Plugin:
 		if self.monitor is not None:
 			self.monitor.stop()
 		# log plugin unload
-		await self.db.add_system_event_log(SystemEventLog(utcnow, "plugin-unload"))
+		await self.db.add_system_event_log(SystemEventLog(utcnow, SystemEventTypes.PLUGIN_UNLOAD))
 		# stop sleep inhibitor
 		if self.sleep_inhibitor is not None:
 			self.sleep_inhibitor.uninhibit()
@@ -127,11 +127,10 @@ class Plugin:
 		loop.create_task(self.db.log_device_info(logtime, device_path, device_info))
 	
 	def _when_system_suspended(self, time: datetime.datetime):
-		self.db.add_system_event_log(SystemEventLog(time, "suspend"))
+		self.db.add_system_event_log(SystemEventLog(time, SystemEventTypes.SUSPEND))
 
 	def _when_system_resumed(self, time: datetime.datetime):
-		self.db.add_system_event_log(SystemEventLog(time, "resume"))
+		self.db.add_system_event_log(SystemEventLog(time, SystemEventTypes.RESUME))
 	
 	def _when_system_shutdown(self, time: datetime.datetime):
-		self.db.add_system_event_log(SystemEventLog(time, "shutdown"))
-
+		self.db.add_system_event_log(SystemEventLog(time, SystemEventTypes.SHUTDOWN))
