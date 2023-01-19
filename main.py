@@ -1,20 +1,22 @@
 import os
 import sys
 PYTHON_LIB_DIR = '/usr/lib/python{}.{}'.format(sys.version_info[0], sys.version_info[1])
-sys.path.append(PYTHON_LIB_DIR)
-sys.path.append(PYTHON_LIB_DIR+'/lib-dynload')
-sys.path.append(PYTHON_LIB_DIR+'/site-packages')
 PLUGIN_DIR = os.path.dirname(os.path.realpath(__file__))
-sys.path.append(PLUGIN_DIR+"/py_modules")
+sys.path.extend([
+	PYTHON_LIB_DIR,
+	PYTHON_LIB_DIR+'/lib-dynload',
+	PYTHON_LIB_DIR+'/site-packages',
+	PLUGIN_DIR+'/py_modules',
+	PLUGIN_DIR+'/backend'
+])
 import asyncio
-from typing import Tuple, Any
+from typing import Tuple, Any, Awaitable, Callable
 import datetime
 import logging
 
-sys.path.append(PLUGIN_DIR+"/backend")
 from upower_monitor import UPowerMonitor, UPowerDeviceInfo
 from power_history import PowerHistoryDB, SystemEventLog, SystemEventTypes
-from sleep_inhibit import SleepInhibitor
+from system_signals import SystemSignalListener
 
 DATA_DIR = "/home/deck/.battery-analytics-decky"
 
@@ -26,25 +28,28 @@ logger=logging.getLogger()
 logger.setLevel(logging.INFO) # can be changed to logging.DEBUG for debugging issues
 
 class Plugin:
+	loop: asyncio.AbstractEventLoop = None
 	monitor: UPowerMonitor = None
 	db: PowerHistoryDB = None
-	sleep_inhibitor: SleepInhibitor = None
-
+	system_signal_listener: SystemSignalListener = None
+	
 
 	# Asyncio-compatible long-running code, executed in a task when the plugin is loaded
 	async def _main(self):
 		logger.info("Loading Battery Info plugin")
 		utcnow = datetime.datetime.utcnow()
+		self.loop = asyncio.get_event_loop()
 		# connect DB
 		if self.db is None:
 			self.db = PowerHistoryDB(dir=DATA_DIR)
 		await self.db.connect()
 		# start sleep inhibitor
-		if self.sleep_inhibitor is None:
-			self.sleep_inhibitor = SleepInhibitor()
-		self.sleep_inhibitor.when_system_suspend = self._when_system_suspended
-		self.sleep_inhibitor.when_system_resume = self._when_system_resumed
-		await self.sleep_inhibitor.inhibit()
+		if self.system_signal_listener is None:
+			self.system_signal_listener = SystemSignalListener()
+			self.system_signal_listener.on_system_suspend = self._when_system_suspended
+			self.system_signal_listener.on_system_resume = self._when_system_resumed
+			self.system_signal_listener.on_system_shutdown = self._when_system_shutdown
+		self.system_signal_listener.listen()
 		# start device monitor
 		if self.monitor is None:
 			self.monitor = UPowerMonitor()
@@ -59,13 +64,16 @@ class Plugin:
 		logger.info("Unloading Battery Info plugin")
 		utcnow = datetime.datetime.utcnow()
 		# stop device monitor
-		if self.monitor is not None:
-			self.monitor.stop()
+		try:
+			if self.monitor is not None:
+				self.monitor.stop()
+		except BaseException as error:
+			logger.error("Error while stopping UPower monitor:\n"+str(error))
 		# log plugin unload
 		await self.db.add_system_event_log(SystemEventLog(utcnow, SystemEventTypes.PLUGIN_UNLOAD))
 		# stop sleep inhibitor
-		if self.sleep_inhibitor is not None:
-			self.sleep_inhibitor.uninhibit()
+		if self.system_signal_listener is not None:
+			self.system_signal_listener.unlisten()
 		# close db
 		if self.db is not None:
 			await self.db.close()
@@ -126,15 +134,46 @@ class Plugin:
 			logs_arr.append(log.to_dict())
 		return logs_arr
 	
-	def _when_device_updated(self, logtime: datetime.datetime, device_path: str, device_info: UPowerDeviceInfo):
-		loop = asyncio.get_event_loop()
-		loop.create_task(self.db.log_device_info(logtime, device_path, device_info))
-	
-	def _when_system_suspended(self, time: datetime.datetime):
-		self.db.add_system_event_log(SystemEventLog(time, SystemEventTypes.SUSPEND))
 
-	def _when_system_resumed(self, time: datetime.datetime):
-		self.db.add_system_event_log(SystemEventLog(time, SystemEventTypes.RESUME))
+
+	async def _logged_async_call(self, name: str, callable: Callable):
+		try:
+			await callable()
+		except BaseException as error:
+			logger.error("Error during task "+name+":\n"+str(error))
 	
-	def _when_system_shutdown(self, time: datetime.datetime):
-		self.db.add_system_event_log(SystemEventLog(time, SystemEventTypes.SHUTDOWN))
+	def _create_task_threadsafe(self, loop: asyncio.AbstractEventLoop, name: str, callable: Callable):
+		return loop.call_soon_threadsafe(lambda:loop.create_task(self._logged_async_call(name, callable)))
+	
+	
+	
+	def _when_device_updated(self, logtime: datetime.datetime, device_path: str, device_info: UPowerDeviceInfo):
+		loop = self.loop
+		if loop is None:
+			logger.error("called _when_device_updated, but no event loop available to queue action to")
+			return
+		self._create_task_threadsafe(loop, lambda:self.db.log_device_info(logtime, device_path, device_info))
+	
+	def _when_system_suspended(self):
+		now = datetime.datetime.utcnow()
+		loop = self.loop
+		if loop is None:
+			logger.error("called _when_system_suspended, but no event loop available to queue action to")
+			return
+		self._create_task_threadsafe(loop, lambda:self.db.add_system_event_log(SystemEventLog(now, SystemEventTypes.SUSPEND)))
+
+	def _when_system_resumed(self):
+		now = datetime.datetime.utcnow()
+		loop = self.loop
+		if loop is None:
+			logger.error("called _when_system_resumed, but no event loop available to queue action to")
+			return
+		self._create_task_threadsafe(loop, lambda:self.db.add_system_event_log(SystemEventLog(now, SystemEventTypes.RESUME)))
+	
+	def _when_system_shutdown(self):
+		now = datetime.datetime.utcnow()
+		loop = self.loop
+		if loop is None:
+			logger.error("called _when_system_resumed, but no event loop available to queue action to")
+			return
+		self._create_task_threadsafe(loop, lambda:self.db.add_system_event_log(SystemEventLog(now, SystemEventTypes.SHUTDOWN)))

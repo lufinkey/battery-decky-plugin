@@ -54,6 +54,7 @@ def merge_dict(d: dict, patch: dict, copy: bool = True, copy_inner: bool = True)
 	return d
 
 
+
 class AsyncValue:
 	loop: asyncio.AbstractEventLoop
 	ready_event: asyncio.Event

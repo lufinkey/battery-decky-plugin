@@ -29,7 +29,7 @@
 	},
 	"homepage": "https://github.com/lufinkey/battery-decky-plugin#readme",
 	"dependencies": {
-		"decky-frontend-lib": "^3.18.6",
+		"decky-frontend-lib": "^3.18.10",
 		"react-icons": "^4.7.1"
 	},
 	"devDependencies": {
