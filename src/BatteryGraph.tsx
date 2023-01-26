@@ -1,6 +1,7 @@
 import { PureComponent, CSSProperties } from 'react';
 import { Graph, LineData, AxisLineData } from './Graph';
 import { PluginBackend, BatteryStateLog, SystemEventLog, TimeRangeArgs, TimeGroupArgs } from './PluginBackend';
+import { SteamClient } from 'decky-frontend-lib';
 
 type Props = {
 	backendAPI: PluginBackend
@@ -239,7 +240,7 @@ export class BatteryGraph extends PureComponent<Props,State> {
 						log.energy_rate_W
 					]);
 				} break;
-					
+				
 				case 'system-event': {
 					const log: SystemEventLog = logEntry.data as SystemEventLog;
 					if (log.event == 'suspend' || log.event == 'resume') {

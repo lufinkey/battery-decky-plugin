@@ -108,6 +108,7 @@ export class PluginBackend {
 		backendArgs = convertTimeRangeArgs(args, backendArgs);
 		backendArgs = convertTimeGroupArgs(args, backendArgs);
 		const logs = await this.callPluginMethod<BatteryStateLog[]>("get_battery_state_logs", backendArgs);
+		console.dir(logs);
 		for(const log of logs) {
 			if(typeof log.time == 'string') {
 				log.time = new Date(log.time);
@@ -120,6 +121,7 @@ export class PluginBackend {
 		let backendArgs: BackendTimeRangeArgs = {};
 		backendArgs = convertTimeRangeArgs(args, backendArgs);
 		const logs = await this.callPluginMethod<SystemEventLog[]>("get_system_event_logs", backendArgs);
+		console.dir(logs);
 		for(const log of logs) {
 			if(typeof log.time == 'string') {
 				log.time = new Date(log.time);

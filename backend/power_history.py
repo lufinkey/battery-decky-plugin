@@ -62,6 +62,7 @@ class BatteryStateLog:
 			time = logtime_utc,
 			state = bi.state,
 			energy_Wh = bi.energy_Wh,
+			energy_empty_Wh = bi.energy_empty_Wh,
 			energy_full_Wh = bi.energy_full_Wh,
 			energy_full_design_Wh = bi.energy_full_design_Wh,
 			energy_rate_W = bi.energy_rate_W,
@@ -72,10 +73,12 @@ class BatteryStateLog:
 	
 	@classmethod
 	def from_dbtuple(cls, dbtuple: tuple):
+		logger.debug("from_dbtuple( "+str(dbtuple)+" )")
 		(device_path,
 			time,
 			state,
 			energy_Wh,
+			energy_empty_Wh,
 			energy_full_Wh,
 			energy_full_design_Wh,
 			energy_rate_W,
@@ -88,6 +91,7 @@ class BatteryStateLog:
 			time = time,
 			state = state,
 			energy_Wh = energy_Wh,
+			energy_empty_Wh = energy_empty_Wh,
 			energy_full_Wh = energy_full_Wh,
 			energy_full_design_Wh = energy_full_design_Wh,
 			energy_rate_W = energy_rate_W,
@@ -102,6 +106,7 @@ class BatteryStateLog:
 			self.time,
 			self.state,
 			self.energy_Wh,
+			self.energy_empty_Wh,
 			self.energy_full_Wh,
 			self.energy_full_design_Wh,
 			self.energy_rate_W,
@@ -117,6 +122,7 @@ class BatteryStateLog:
 			time = d['time'],
 			state = d['state'],
 			energy_Wh = d['energy_Wh'],
+			energy_empty_Wh = d['energy_empty_Wh'],
 			energy_full_Wh = d['energy_full_Wh'],
 			energy_full_design_Wh = d['energy_full_design_Wh'],
 			energy_rate_W = d['energy_rate_W'],
@@ -131,6 +137,7 @@ class BatteryStateLog:
 			'time': self.time,
 			'state': self.state,
 			'energy_Wh': self.energy_Wh,
+			'energy_empty_Wh': self.energy_empty_Wh,
 			'energy_full_Wh': self.energy_full_Wh,
 			'energy_full_design_Wh': self.energy_full_design_Wh,
 			'energy_rate_W': self.energy_rate_W,
@@ -156,8 +163,8 @@ class SystemEventLog:
 		tblname = cls.get_sql_tablename()
 		return '''CREATE TABLE IF NOT EXISTS {} (
 			time TIMESTAMP NOT NULL,
-			event TEXT NOT NULL
-			PRIMARY KEY(device_path, time)
+			event TEXT NOT NULL,
+			PRIMARY KEY(time,event)
 		)'''.format(tblname)
 	
 	@classmethod
@@ -205,8 +212,8 @@ class PowerHistoryDB:
 		self.dir = dir
 	
 	def _setup_db(self):
-		sql = BatteryStateLog.get_sql_createtable()
-		self._commit_sql(sql, parameters=[])
+		self._commit_sql(BatteryStateLog.get_sql_createtable(), parameters=[])
+		self._commit_sql(SystemEventLog.get_sql_createtable(), parameters=[])
 
 	def _prepare_db_loop(self):
 		if self.db_loop is not None:
@@ -227,17 +234,17 @@ class PowerHistoryDB:
 			raise RuntimeError("No cursor available to run query")
 		elif connection is None:
 			raise RuntimeError("No connection available to run query")
-		cursor.executemany(sql, parameters)
+		cursor.execute(sql, parameters)
 		return cursor.fetchall()
 	
-	def _commit_sql(self, sql: str, parameters: list):
+	def _commit_sql(self, sql: str, parameters: list = None):
 		connection = self.connection
 		cursor = self.cursor
 		if cursor is None:
 			raise RuntimeError("No cursor available to run query")
 		elif connection is None:
 			raise RuntimeError("No connection available to run query")
-		cursor.executemany(sql, parameters)
+		cursor.execute(sql, parameters)
 		connection.commit()
 	
 
@@ -259,7 +266,11 @@ class PowerHistoryDB:
 		self._setup_db()
 	
 	async def close(self):
-		return await self._db_loop_op(self._close)
+		if self.db_loop is None:
+			return
+		await self._db_loop_op(self._close)
+		self.db_loop.close()
+		self.db_loop = None
 	def _close(self):
 		# close cursor
 		if self.cursor is not None:
@@ -269,6 +280,15 @@ class PowerHistoryDB:
 		if self.connection is not None:
 			self.connection.close()
 			self.connection = None
+		# close loop
+		if self.db_loop is not None:
+			self.db_loop.stop()
+	
+	def _param_string(self, arg_count: int):
+		args=[]
+		for i in range(arg_count):
+			args.append("?")
+		return ",".join(args)
 	
 
 	
@@ -278,14 +298,15 @@ class PowerHistoryDB:
 			batt_log = BatteryStateLog.from_device_info(logtime_utc, device_path, device_info)
 			await self.add_battery_state_log(batt_log)
 		else:
-			logger.error("Unknown device type for "+device_path)
+			logger.error("Unknown device type for "+device_path+" (info = "+str(device_info.info)+")")
 	
 	async def add_battery_state_log(self, batt_state_log: BatteryStateLog) -> list:
 		return await self._db_loop_op(lambda:self._add_battery_state_log(batt_state_log))
 	def _add_battery_state_log(self, batt_state_log: BatteryStateLog) -> list:
 		tblname = BatteryStateLog.get_sql_tablename()
-		sql = '''INSERT OR REPLACE INTO {} VALUES(?)'''.format(tblname)
-		data = [ batt_state_log.to_dbtuple() ]
+		data = batt_state_log.to_dbtuple()
+		sql = '''INSERT OR REPLACE INTO {} VALUES({})'''.format(tblname, self._param_string(len(data)))
+		
 		return self._commit_sql(sql, data)
 	
 	async def get_battery_state_logs(self,
@@ -311,19 +332,13 @@ class PowerHistoryDB:
 		prefer_group_first: bool = True) -> List[BatteryStateLog]:
 		tblname = BatteryStateLog.get_sql_tablename()
 		params = []
-		sql = 'SELECT '
+		sql = 'SELECT *'
 		if group_by_interval is not None:
-			if prefer_group_first:
-				sql += 'FIRST_VALUE(*)'
-			else:
-				sql += 'LAST_VALUE(*)'
-			(group_start_time, group_interval_secs) = group_by_interval
+			(group_start_time, group_interval) = group_by_interval
 			# 86400 is the number of seconds in a day (60 * 60 * 24)
-			sql += ', FLOOR(((JULIANDAY(time) - JULIANDAY(?)) * 86400) / ?) as time_group'
+			sql += ', ROUND((((JULIANDAY(time) - JULIANDAY(?)) * 86400) / ?) - 0.5) as time_group'
 			params.append(group_start_time)
-			params.append(group_interval_secs)
-		else:
-			sql += '*'
+			params.append(group_interval.total_seconds())
 		sql += ' FROM '+tblname
 		# check if where clause is needed
 		if time_start is not None or time_end is not None:
@@ -346,7 +361,13 @@ class PowerHistoryDB:
 				params.append(time_end)
 				clause_count += 1
 		if group_by_interval is not None:
-			sql += ' GROUP BY time_group'
+			sql += ' GROUP BY time_group HAVING '
+			if prefer_group_first:
+				sql += 'MIN(time)'
+			else:
+				sql += 'MAX(time)'
+		sql += ' ORDER BY time'
+		#logger.debug("executing sql:\n"+sql+"\nparams: "+str(params))
 		records = self._fetch_sql(sql, params)
 		batt_state_logs = []
 		for record in records:
@@ -354,11 +375,11 @@ class PowerHistoryDB:
 		return batt_state_logs
 	
 	async def add_system_event_log(self, system_evt_log: SystemEventLog) -> list:
-		return await self._db_loop_op(lambda:self._add_battery_state_log(system_evt_log))
+		return await self._db_loop_op(lambda:self._add_system_event_log(system_evt_log))
 	def _add_system_event_log(self, system_evt_log: SystemEventLog) -> list:
 		tblname = SystemEventLog.get_sql_tablename()
-		sql = '''INSERT OR REPLACE INTO {} VALUES(?)'''.format(tblname)
-		data = [ system_evt_log.to_dbtuple() ]
+		data = system_evt_log.to_dbtuple()
+		sql = '''INSERT OR REPLACE INTO {} VALUES({})'''.format(tblname, self._param_string(len(data)))
 		return self._commit_sql(sql, data)
 	
 	async def get_system_event_logs(self,

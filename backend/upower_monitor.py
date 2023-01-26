@@ -80,7 +80,7 @@ def read_value_duration(time_str: str) -> datetime.timedelta:
 	if parts_len <= 1 or (parts_len % 2) != 0:
 		logger.error("invalid number of parts for time string "+time_str)
 		return None
-	pairs_count = parts_len / 2
+	pairs_count = int(parts_len / 2)
 	td = datetime.timedelta()
 	for i in range(pairs_count):
 		num_i = i * 2
@@ -270,18 +270,24 @@ class UPowerDeviceInfo:
 	@classmethod
 	def parse(cls, data: str, offset: int) -> Tuple['UPowerDeviceInfo', int]:
 		(info_dict, offset) = cls.parse_info_chunk(data, offset=offset, parent_indent=0)
+		#logger.debug("parsed info chunk "+str(info_dict))
 		if info_dict is None:
 			return (None, offset)
 		return (UPowerDeviceInfo(info_dict), offset)
 	
 	@classmethod
 	def parse_info_chunk(cls, data: str, offset: int, parent_indent: int) -> Tuple[dict, int]:
+		#logger.debug("parsing info chunk at offset "+str(offset)+":\n"+data[0:offset]+"]["+data[offset:])
 		data_len = len(data)
 		if data_len == 0 or offset == data_len:
 			return (None, offset)
 		if data[offset] == '[':
 			return (None, offset)
 		info = dict()
+		common_indent = parent_indent
+		prev_entry_key: str = None
+		prev_entry_val = None
+		line_count = 0
 		while offset < data_len:
 			line_offset = offset
 			# parse whitespace
@@ -293,34 +299,74 @@ class UPowerDeviceInfo:
 				elif c == '\t':
 					line_indent += 4
 				elif c == '\r' or c == '\n':
-					return (None, get_next_line_index(data, offset))
+					# clear info if empty
+					if len(info) == 0:
+						info = None
+					return (info, line_offset)
 				else:
 					break
 				offset += 1
 			if line_indent <= parent_indent:
 				# this belongs to a previous indent level
-				return (None, line_offset)
+				# clear info if empty
+				if len(info) == 0:
+					info = None
+				return (info, line_offset)
+			elif line_indent > common_indent:
+				if line_count == 0:
+					common_indent = line_indent
+				else:
+					# this line be appended to the previous property
+					if prev_entry_key is not None:
+						if isinstance(prev_entry_val, str) and len(prev_entry_val) == 0:
+							prev_entry_val = None
+						line_end_offset = get_line_end_index(data, offset)
+						line = data[offset:line_end_offset].strip()
+						if prev_entry_val is None:
+							prev_entry_val = line
+							info[prev_entry_key] = prev_entry_val
+						elif isinstance(prev_entry_val, str):
+							prev_entry_val = (prev_entry_val+"\n"+line).strip()
+							info[prev_entry_key] = prev_entry_val
+						elif isinstance(prev_entry_val, list):
+							prev_entry_val.append(line)
+						else:
+							logger.error("unknown previous type "+str(type(prev_entry_val))+" to consume line: "+line)
+					else:
+						logger.error("No previous key to consume indented line: "+line)
+					offset = get_next_line_index(data, line_end_offset)
+					line_count += 1
+					continue
 			# check for a colon
-			keyEndIndex = skip_to_occurance_of_chars(data, offset, ":\r\n")
-			if keyEndIndex == data_len:
-				if keyEndIndex > offset:
-					logger.warn("unused line "+data[offset:keyEndIndex])
-				return (None, data_len)
-			c = data[keyEndIndex]
+			key_end_offset = skip_to_occurance_of_chars(data, offset, ":\r\n")
+			if key_end_offset == data_len:
+				if key_end_offset > offset:
+					logger.warn("unused line "+data[offset:key_end_offset])
+				# clear info if empty
+				if len(info) == 0:
+					info = None
+				return (info, data_len)
+			c = data[key_end_offset]
 			if c == ':':
 				# this is a key with a value
-				lineEndIndex = get_line_end_index(data, keyEndIndex+1)
-				entry_key = data[offset:keyEndIndex].strip()
-				entry_value = data[keyEndIndex+1:lineEndIndex].strip()
+				line_end_offset = get_line_end_index(data, key_end_offset+1)
+				entry_key = data[offset:key_end_offset].strip()
+				entry_value = data[key_end_offset+1:line_end_offset].strip()
 				info[entry_key] = entry_value
-				offset = get_next_line_index(data, lineEndIndex)
+				prev_entry_key = entry_key
+				prev_entry_val = entry_value
+				offset = get_next_line_index(data, line_end_offset)
 			else:
 				# this entry has key-value entries
-				entry_key = data[offset:keyEndIndex].strip()
-				offset = get_next_line_index(data, keyEndIndex)
+				entry_key = data[offset:key_end_offset].strip()
+				offset = get_next_line_index(data, key_end_offset)
 				(child_info, offset) = cls.parse_info_chunk(data, offset, parent_indent=line_indent)
+				#logger.debug("resuming at offset "+str(offset)+"\n"+data[0:offset]+"]["+data[offset:]+"\ninfo = "+str(child_info))
 				if child_info is not None:
 					info[entry_key] = child_info
+				prev_entry_key = entry_key
+				prev_entry_val = child_info
+			line_count += 1
 		return (info, offset)
 	
 	def copy(self) -> 'UPowerDeviceInfo':
@@ -348,6 +394,7 @@ class UPowerDeviceInfo:
 
 
 class UPowerMonitor:
+	update_devices_on_start: bool = False
 	main_loop: asyncio.AbstractEventLoop
 	monitor_proc: subprocess.Popen = None
 	monitor_reader_thread: threading.Thread = None
@@ -406,12 +453,15 @@ class UPowerMonitor:
 		else:
 			logger.info("found {} initial devices:\n{}".format(len(devices), "- "+str.join("\n- ", devices)))
 		device_infos = dict()
-		for device in devices:
-			device_info = self.fetch_device_info(device)
+		for device_path in devices:
+			now = datetime.datetime.utcnow()
+			device_info = self.fetch_device_info(device_path)
 			if device_info is None:
-				logger.error("Couldn't fetch info for device "+device)
-			else:
-				device_infos[device] = device_info
+				logger.error("Couldn't fetch info for device "+device_path)
+				continue
+			device_infos[device_path] = device_info
+			if self.update_devices_on_start and self.when_device_updated is not None:
+				self.when_device_updated(now, device_path, device_info)
 		self.device_infos = device_infos
 		# attach UTC timezone for more correct date reading
 		procenv = os.environ.copy()
@@ -453,8 +503,9 @@ class UPowerMonitor:
 				self.when_device_updated(logtime_utc, device_path, new_device_info)
 	
 	def on_monitor_end(self):
+		exit_code = self.monitor_proc.poll()
 		self.monitor_proc = None
-		pass
+		logger.info("upower monitor exited with code "+str(exit_code))
 	
 	def _consume_monitor_output(self, stdout: IO[bytes]):
 		is_first_line = True
@@ -500,7 +551,7 @@ class UPowerMonitor:
 								# parse timestamp
 								logtime_utc = None
 								if "updated" in device_info.info:
-									updated_date_str = device_info["updated"]
+									updated_date_str = device_info.info["updated"]
 									if isinstance(updated_date_str, str):
 										if updated_date_str.endswith(")"):
 											parenth_start = updated_date_str.rfind("(", 0, len(updated_date_str)-1)
@@ -525,11 +576,11 @@ class UPowerMonitor:
 									else:
 										logtime_utc = tm_from_now
 								# call update event
-								logger.info("got event {} for {} at timestamp {}".format(header.event_type, str(header.event_value), header.logtime.isoformat()))
+								logger.debug("got event {} for {} at timestamp {}".format(header.event_type, str(header.event_value), logtime_utc.isoformat()))
 								self.main_loop.call_soon_threadsafe(lambda:self.on_monitor_device_update(logtime_utc, header, device_info))
 					else:
 						# ignore empty line
 						logger.info("Ignoring empty line")
 			except BaseException as error:
-				logger.error("Error reading line:\n"+str(error))
+				logger.exception(error)
 		self.main_loop.call_soon_threadsafe(lambda:self.on_monitor_end())
