@@ -97,7 +97,7 @@ class Plugin:
 				logger.warn("group_by_interval_start should be specified if group_by_interval is specified")
 				utcnow = datetime.datetime.utcnow()
 				group_by_interval_start = datetime.datetime(year=utcnow.year, month=utcnow.month, day=utcnow.day, tzinfo=utcnow.tzinfo)
-			group_by_interval: Tuple[datetime.datetime, datetime.timedelta] = (group_by_interval_start, datetime.timedelta(group_by_interval))
+			group_by_interval: Tuple[datetime.datetime, datetime.timedelta] = (group_by_interval_start, datetime.timedelta(seconds=group_by_interval))
 		logs = await self.db.get_battery_state_logs(
 			time_start = time_start,
 			time_start_incl = time_start_incl,
