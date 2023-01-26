@@ -169,11 +169,11 @@ class SystemEventLog:
 		)'''.format(tblname)
 	
 	@classmethod
-	def from_dbtuple(cls, dbtuple: tuple):
+	def from_dbtuple(cls, dbtuple: tuple) -> 'SystemEventLog':
 		(
 			time,
 			event) = dbtuple[0:2]
-		return BatteryStateLog(
+		return SystemEventLog(
 			time = time,
 			event = event)
 	
@@ -183,8 +183,8 @@ class SystemEventLog:
 			self.event)
 	
 	@classmethod
-	def from_dict(cls, d: dict) -> 'BatteryStateLog':
-		return BatteryStateLog(
+	def from_dict(cls, d: dict) -> 'SystemEventLog':
+		return SystemEventLog(
 			time = d['time'],
 			event = d['event'])
 	
