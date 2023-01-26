@@ -12,6 +12,8 @@ from utils import AsyncValue
 
 logger = logging.getLogger()
 
+tzinfo_utc = datetime.datetime.utcnow().tzinfo
+
 
 
 @dataclass
@@ -73,7 +75,6 @@ class BatteryStateLog:
 	
 	@classmethod
 	def from_dbtuple(cls, dbtuple: tuple):
-		logger.debug("from_dbtuple( "+str(dbtuple)+" )")
 		(device_path,
 			time,
 			state,
@@ -85,7 +86,7 @@ class BatteryStateLog:
 			voltage_V,
 			seconds_till_full,
 			percent_current,
-			percent_capacity) = dbtuple
+			percent_capacity) = dbtuple[0:12]
 		return BatteryStateLog(
 			device_path = device_path,
 			time = time,
@@ -103,7 +104,7 @@ class BatteryStateLog:
 	def to_dbtuple(self) -> tuple:
 		return (
 			self.device_path,
-			self.time,
+			self.time.astimezone(tzinfo_utc),
 			self.state,
 			self.energy_Wh,
 			self.energy_empty_Wh,
@@ -171,14 +172,14 @@ class SystemEventLog:
 	def from_dbtuple(cls, dbtuple: tuple):
 		(
 			time,
-			event) = dbtuple
+			event) = dbtuple[0:2]
 		return BatteryStateLog(
 			time = time,
 			event = event)
 	
 	def to_dbtuple(self) -> tuple:
 		return (
-			self.time,
+			self.time.astimezone(tzinfo_utc),
 			self.event)
 	
 	@classmethod
@@ -337,7 +338,7 @@ class PowerHistoryDB:
 			(group_start_time, group_interval) = group_by_interval
 			# 86400 is the number of seconds in a day (60 * 60 * 24)
 			sql += ', ROUND((((JULIANDAY(time) - JULIANDAY(?)) * 86400) / ?) - 0.5) as time_group'
-			params.append(group_start_time)
+			params.append(group_start_time.astimezone(tzinfo_utc))
 			params.append(group_interval.total_seconds())
 		sql += ' FROM '+tblname
 		# check if where clause is needed
@@ -349,7 +350,7 @@ class PowerHistoryDB:
 					sql += 'time >= ?'
 				else:
 					sql += 'time > ?'
-				params.append(time_start)
+				params.append(time_start.astimezone(tzinfo_utc))
 				clause_count += 1
 			if time_end is not None:
 				if clause_count > 0:
@@ -358,7 +359,7 @@ class PowerHistoryDB:
 					sql += 'time <= ?'
 				else:
 					sql += 'time < ?'
-				params.append(time_end)
+				params.append(time_end.astimezone(tzinfo_utc))
 				clause_count += 1
 		if group_by_interval is not None:
 			sql += ' GROUP BY time_group HAVING '
@@ -409,7 +410,7 @@ class PowerHistoryDB:
 					sql += 'time >= ?'
 				else:
 					sql += 'time > ?'
-				params.append(time_start)
+				params.append(time_start.astimezone(tzinfo_utc))
 				clause_count += 1
 			if time_end is not None:
 				if clause_count > 0:
@@ -418,7 +419,7 @@ class PowerHistoryDB:
 					sql += 'time <= ?'
 				else:
 					sql += 'time < ?'
-				params.append(time_end)
+				params.append(time_end.astimezone(tzinfo_utc))
 				clause_count += 1
 		records = self._fetch_sql(sql, params)
 		system_evt_logs = []
