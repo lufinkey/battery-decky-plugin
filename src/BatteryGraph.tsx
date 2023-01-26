@@ -297,6 +297,8 @@ export class BatteryGraph extends PureComponent<Props,State> {
 			<Graph
 				lines={lines}
 				//axisLines={axisLines}
+				yMin={0}
+				yMax={100}
 				width={width}
 				height={height}
 				style={this.props.style}
