@@ -1,5 +1,9 @@
 import os
 import sys
+# The decky plugin module is located at decky-loader/plugin
+# For easy intellisense checkout the decky-loader code one directory up
+# or add the `decky-loader/plugin` path to `python.analysis.extraPaths` in `.vscode/settings.json`
+import decky_plugin
 PYTHON_LIB_DIR = '/usr/lib/python{}.{}'.format(sys.version_info[0], sys.version_info[1])
 PLUGIN_DIR = os.path.dirname(os.path.realpath(__file__))
 PYTHON_PATHS = [
