@@ -25,9 +25,10 @@ type LabelProps = {
 	labelOffsetY?: number
 };
 
-type PointLabelTextGetter = (args: {index: number, x: number, y: number}) => string;
+type PointLabelTextGetter = (args: {index: number, val: [number,number]}) => string;
 type PointLabelProps = LabelProps & {
 	getLabelText?: PointLabelTextGetter
+	drawLabel?: (context: CanvasRenderingContext2D, args: {index: number, val: [number,number], x: number, y: number, text: string}) => void
 	minLabelInterval?: number
 };
 
@@ -57,6 +58,11 @@ export type LineProps = {
 
 type Axis = 'x' | 'y';
 type AxisLineLabelPosition = 'min' | 'max' | 'center';
+type AxisLineLabelProps = LabelProps & {
+	labelPosition?: AxisLineLabelPosition
+	getLabelText?: ValueLabelTextGetter
+	drawLabel?: (context: CanvasRenderingContext2D, args: {x: number, y: number, text: string, index: number, val: number}) => void
+};
 type AxisLineStyle = {
 	lineWidth?: number
 	lineInsetMin?: number
@@ -64,9 +70,7 @@ type AxisLineStyle = {
 	strokeStyle?: string
 
 	showLabels?: boolean
-	labelPosition?: AxisLineLabelPosition
-	getLabelText?: ValueLabelTextGetter
-} & LabelProps;
+} & AxisLineLabelProps;
 
 export type AxisLineProps = {
 	points: number[]
@@ -82,11 +86,12 @@ export type AxisLabelsProps = {
 	labelOffsetX?: number
 	labelOffsetY?: number
 	innerAlignEdgeLabels?: boolean
+	drawLabel?: (context: CanvasRenderingContext2D, args: {x: number, y: number, text: string, index: number, val: number}) => void
 };
 
 
 
-type Props = {
+export type Props = {
 	lines?: LineProps[]
 	axisLines?: AxisLineProps[]
 
@@ -94,7 +99,7 @@ type Props = {
 	rightAxisLabels?: AxisLabelsProps | null
 	topAxisLabels?: AxisLabelsProps | null
 	bottomAxisLabels?: AxisLabelsProps | null
-
+	
 	xMin?: number
 	xMax?: number
 	yMin?: number
@@ -540,11 +545,11 @@ export class Graph extends Component<Props,State> {
 			this.drawGrid(context, layoutProps, gridSpacingX, gridSpacingY, gridLineWidthX, gridLineWidthY);
 			context.restore();
 		}
-
+		
 		// draw border
-		if(borderStrokeStyle) {
+		if(borderStrokeStyle || borderLineWidth) {
 			context.save();
-			context.strokeStyle = borderStrokeStyle;
+			context.strokeStyle = borderStrokeStyle ?? 'lightgray';
 			context.lineWidth = borderLineWidth ?? context.lineWidth;
 			this.drawBorder(context, layoutProps.graphRect);
 			context.restore();
@@ -650,7 +655,7 @@ export class Graph extends Component<Props,State> {
 		context.closePath();
 	}
 
-	drawLabel(context: CanvasRenderingContext2D, text: string, canvasPoint: [number,number], labelProps: LabelProps) {
+	drawLabel(context: CanvasRenderingContext2D, text: string, canvasPoint: [number,number], labelProps: LabelProps, drawLabel?: ((context: CanvasRenderingContext2D, args: {x: number, y: number, text: string}) => void) | null | undefined) {
 		context.save();
 		if(labelProps.labelTextAlign) {
 			context.textAlign = labelProps.labelTextAlign;
@@ -666,7 +671,11 @@ export class Graph extends Component<Props,State> {
 		}
 		const labelX = canvasPoint[0] + (labelProps.labelOffsetX ?? 0);
 		const labelY = canvasPoint[1] + (labelProps.labelOffsetY ?? 0);
-		context.fillText(text, labelX, labelY);
+		if(drawLabel != null) {
+			drawLabel(context, {x: labelX, y: labelY, text});
+		} else {
+			context.fillText(text, labelX, labelY);
+		}
 		context.restore();
 	}
 
@@ -794,13 +803,18 @@ export class Graph extends Component<Props,State> {
 			if(labelProps.getLabelText) {
 				text = labelProps.getLabelText({
 					index: i,
-					x: dataPoint[0],
-					y: dataPoint[1]
+					val: dataPoint
 				});
 			} else {
 				text = `(${dataPoint[0]}, ${dataPoint[1]})`;
 			}
-			this.drawLabel(context, text, canvasPoint, labelProps);
+			const innerCustomDrawLabel = labelProps.drawLabel;
+			const customDrawLabel = innerCustomDrawLabel != null ?
+				(context: CanvasRenderingContext2D, {x,y,text}: {x: number,y:number,text:string}) => {
+					innerCustomDrawLabel(context, {x, y, text, index:i, val:dataPoint});
+				}
+				: null;
+			this.drawLabel(context, text, canvasPoint, labelProps, customDrawLabel);
 			i++;
 		}
 	}
@@ -885,8 +899,8 @@ export class Graph extends Component<Props,State> {
 		context.closePath();
 	}
 
-	drawAxisLineLabels(context: CanvasRenderingContext2D, axis: Axis, points: number[], canvasPoints: number[], lineStart: number, lineEnd: number, lineStyle: AxisLineStyle) {
-		const { labelPosition } = lineStyle;
+	drawAxisLineLabels(context: CanvasRenderingContext2D, axis: Axis, points: number[], canvasPoints: number[], lineStart: number, lineEnd: number, labelProps: AxisLineLabelProps) {
+		const { labelPosition } = labelProps;
 		let canvasLabelPoint: number | undefined = undefined;
 		switch(labelPosition ?? 'max') {
 			case 'center':
@@ -914,15 +928,21 @@ export class Graph extends Component<Props,State> {
 				for(const dataPointX of points) {
 					const canvasPointX = canvasPoints[i];
 					let text: string;
-					if(lineStyle.getLabelText) {
-						text = lineStyle.getLabelText({
+					if(labelProps.getLabelText) {
+						text = labelProps.getLabelText({
 							index: i,
 							val: dataPointX
 						});
 					} else {
 						text = `${dataPointX}`;
 					}
-					this.drawLabel(context, text, [canvasPointX,canvasLabelPoint], lineStyle);
+					const innerCustomDrawLabel = labelProps.drawLabel;
+					const customDrawLabel = innerCustomDrawLabel != null ?
+						(context: CanvasRenderingContext2D, {x,y,text}: {x: number, y: number, text: string}) => {
+							innerCustomDrawLabel(context, {x, y, text, index:i, val:dataPointX});
+						}
+						: null;
+					this.drawLabel(context, text, [canvasPointX,canvasLabelPoint], labelProps, customDrawLabel);
 					i++;
 				}
 			} break;
@@ -932,15 +952,21 @@ export class Graph extends Component<Props,State> {
 				for(const dataPointY of points) {
 					const canvasPointY = canvasPoints[i];
 					let text: string;
-					if(lineStyle.getLabelText) {
-						text = lineStyle.getLabelText({
+					if(labelProps.getLabelText) {
+						text = labelProps.getLabelText({
 							index: i,
 							val: dataPointY
 						});
 					} else {
 						text = `${dataPointY}`;
 					}
-					this.drawLabel(context, text, [canvasLabelPoint,canvasPointY], lineStyle);
+					const innerCustomDrawLabel = labelProps.drawLabel;
+					const customDrawLabel = innerCustomDrawLabel != null ?
+						(context: CanvasRenderingContext2D, {x,y,text}: {x: number, y: number, text: string}) => {
+							innerCustomDrawLabel(context, {x, y, text, index:i, val:dataPointY});
+						}
+						: null;
+					this.drawLabel(context, text, [canvasLabelPoint,canvasPointY], labelProps, customDrawLabel);
 					i++;
 				}
 			} break;
@@ -994,26 +1020,35 @@ export class Graph extends Component<Props,State> {
 			labelOffsetY: axisLabelsProps.labelOffsetY,
 			labelTextBaseline: textBaseline
 		};
-		for(const [x,label] of axisLabelsProps.labels) {
-			if(label == null || label.length == 0) {
+		let i=0;
+		for(const [dataX,label] of axisLabelsProps.labels) {
+			if((label == null || label.length == 0) && axisLabelsProps.drawLabel == null) {
+				i++;
 				continue;
 			}
-			const canvasPointX = this.calculateCanvasPointX(x, dataRangeX[0], dataWidth, graphRect.left, graphWidth);
+			const canvasPointX = this.calculateCanvasPointX(dataX, dataRangeX[0], dataWidth, graphRect.left, graphWidth);
 			let labelStyle = axisLabelsStyle;
 			if(axisLabelsProps.innerAlignEdgeLabels ?? false) {
-				if(x == dataRangeX[0]) {
+				if(dataX == dataRangeX[0]) {
 					labelStyle = {
 						...labelStyle,
 						labelTextAlign: 'left'
 					};
-				} else if(x == dataRangeX[1]) {
+				} else if(dataX == dataRangeX[1]) {
 					labelStyle = {
 						...labelStyle,
 						labelTextAlign: 'right'
 					};
 				}
 			}
-			this.drawLabel(context, label, [canvasPointX, canvasPointY], labelStyle);
+			const innerCustomDrawLabel = axisLabelsProps.drawLabel;
+			const customDrawLabel = innerCustomDrawLabel != null ?
+				(context: CanvasRenderingContext2D, {x,y,text}: {text:string,x:number,y:number}) => {
+					innerCustomDrawLabel(context, {x,y,text, index:i, val:dataX});
+				}
+				: null;
+			this.drawLabel(context, label, [canvasPointX, canvasPointY], labelStyle, customDrawLabel);
+			i++;
 		}
 	}
 
@@ -1044,26 +1079,35 @@ export class Graph extends Component<Props,State> {
 			labelOffsetY: axisLabelsProps.labelOffsetY,
 			labelTextBaseline: 'middle'
 		};
-		for(const [y,label] of axisLabelsProps.labels) {
-			if(label == null || label.length == 0) {
+		let i=0;
+		for(const [dataY,label] of axisLabelsProps.labels) {
+			if((label == null || label.length == 0) && axisLabelsProps.drawLabel == null) {
+				i++;
 				continue;
 			}
-			const canvasPointY = this.calculateCanvasPointY(y, dataRangeY[0], dataHeight, graphRect.top, graphHeight);
+			const canvasPointY = this.calculateCanvasPointY(dataY, dataRangeY[0], dataHeight, graphRect.top, graphHeight);
 			let labelStyle = axisLabelsStyle;
 			if(axisLabelsProps.innerAlignEdgeLabels ?? false) {
-				if(y == dataRangeY[0]) {
+				if(dataY == dataRangeY[0]) {
 					labelStyle = {
 						...labelStyle,
 						labelTextBaseline: 'bottom'
 					};
-				} else if(y == dataRangeY[1]) {
+				} else if(dataY == dataRangeY[1]) {
 					labelStyle = {
 						...labelStyle,
 						labelTextBaseline: 'top'
 					};
 				}
 			}
-			this.drawLabel(context, label, [canvasPointX, canvasPointY], labelStyle);
+			const innerCustomDrawLabel = axisLabelsProps.drawLabel;
+			const customDrawLabel = innerCustomDrawLabel != null ?
+				(context: CanvasRenderingContext2D, {x,y,text}: {text:string,x:number,y:number}) => {
+					innerCustomDrawLabel(context, {x,y,text, index:i, val:dataY});
+				}
+				: null;
+			this.drawLabel(context, label, [canvasPointX, canvasPointY], labelStyle, customDrawLabel);
+			i++;
 		}
 	}
 

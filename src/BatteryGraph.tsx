@@ -351,7 +351,7 @@ export class BatteryGraph extends PureComponent<Props,State> {
 				labelTextAlign: 'center',
 				labelFillStyle: 'white',
 				labelOffsetY: -8,
-				getLabelText: ({ index, x: timeSeconds, y: percent }) => `${percent.toFixed(2)}%`
+				getLabelText: ({ index, val: [timeSeconds, percent] }) => `${percent.toFixed(2)}%`
 			});
 			axisLines.push({
 				axis: 'x',
@@ -359,7 +359,7 @@ export class BatteryGraph extends PureComponent<Props,State> {
 				strokeStyle: 'gray',
 				lineWidth: 1,
 				lineInsetMax: (height * 0.2),
-
+				
 				showLabels: true,
 				getLabelText: ({ index, val }) => logEntries.systemEvents[index].event
 			});
@@ -373,7 +373,7 @@ export class BatteryGraph extends PureComponent<Props,State> {
 				innerAlignEdgeLabels: true
 			};
 		}
-
+		
 		return (
 			<Graph
 				lines={lines}
