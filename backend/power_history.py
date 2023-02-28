@@ -60,7 +60,7 @@ class BatteryStateLog:
 		)'''.format(tblname)
 	
 	@classmethod
-	async def get_sql_migrations(cls, column_names: List[str]) -> List[str]:
+	def get_sql_migrations(cls, column_names: List[str]) -> List[str]:
 		tblname = cls.get_sql_tablename()
 		migrations = list()
 		if 'seconds_till_empty' not in column_names:
@@ -234,7 +234,7 @@ class PowerHistoryDB:
 	def _setup_db(self):
 		self._commit_sql(BatteryStateLog.get_sql_createtable(), parameters=[])
 		self._commit_sql(SystemEventLog.get_sql_createtable(), parameters=[])
-		for sql_mig in BatteryStateLog.get_sql_migrations():
+		for sql_mig in BatteryStateLog.get_sql_migrations(column_names=self._get_column_names(BatteryStateLog.get_sql_tablename())):
 			self._commit_sql(sql_mig)
 	
 	def _prepare_db_loop(self):
