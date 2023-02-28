@@ -101,7 +101,7 @@ class BatteryStateLog:
 			seconds_till_full,
 			seconds_till_empty,
 			percent_current,
-			percent_capacity) = dbtuple[0:12]
+			percent_capacity) = dbtuple[0:13]
 		return BatteryStateLog(
 			device_path = device_path,
 			time = time,
