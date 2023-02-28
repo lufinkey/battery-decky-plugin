@@ -1,7 +1,8 @@
 import React from 'react';
 import logo from './logo.svg';
 import './App.css';
-import { Graph } from './battery-analytics/Graph';
+import { MockBatteryDataProvider } from './MockBatteryDataProvider';
+import { BatteryGraph } from './battery-analytics/BatteryGraph';
 
 function App() {
 	return (
@@ -19,36 +20,16 @@ function App() {
 				>
 					Learn React
 				</a>
-				<Graph
-					lines={[
-						{
-							points: [
-								[2, 4],
-								[3, 12],
-								[4, 8],
-								[5, 2],
-								[6, 3]
-							],
-							lineWidth: 2,
-							strokeStyle: 'lightblue',
-							fill: true,
-							
-							showDots: true,
-							dotRadius: 5,
-							dotsFillStyle: 'lightblue',
-							
-							showLabels: true,
-							labelTextAlign: 'center',
-							labelFillStyle: 'white',
-							labelOffsetY: -8
-						}
-					]}
-					width={540}
-					height={500}
-					paddingLeft={20}
-					paddingRight={20}
-					gridSpacingX={1}
-					gridSpacingY={1}/>
+				<BatteryGraph
+					width={268*window.devicePixelRatio}
+					height={200*window.devicePixelRatio}
+					dataProvider={MockBatteryDataProvider}
+					style={{
+						width: '268px',
+						height: '200px',
+						border: '2px solid red',
+						padding: '0px'
+					}}/>
 			</header>
 		</div>
 	);

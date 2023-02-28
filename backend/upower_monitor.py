@@ -246,6 +246,17 @@ class UPowerDeviceBatteryInfo:
 		return td.total_seconds()
 	
 	@property
+	def time_till_empty(self) -> datetime.timedelta:
+		return read_value_duration(self.info.get("time to empty"))
+	
+	@property
+	def seconds_till_empty(self) -> float:
+		td = self.time_till_empty
+		if td is None:
+			return None
+		return td.total_seconds()
+	
+	@property
 	def percent_current(self) -> float:
 		return read_value_percentage(self.info.get("percentage"))
 	
@@ -434,7 +445,7 @@ class UPowerMonitor:
 		if info is None:
 			logger.error("Couldn't parse device info from output chunk "+output_str)
 		return info
-
+	
 	def start(self):
 		if self.monitor_proc is not None and self.monitor_proc.poll() is None \
 			and self.monitor_reader_thread is not None and self.monitor_reader_thread.is_alive():

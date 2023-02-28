@@ -59,9 +59,8 @@ export class Canvas extends Component<Props,State> {
 	}
 	
 	render() {
-		console.log("Canvas.render");
 		const canvasProps = {...this.props};
-		for(const key in AdditionalCanvasPropKeys) {
+		for(const key of AdditionalCanvasPropKeys) {
 			delete canvasProps[key];
 		}
 		return <canvas {...canvasProps} ref={this.canvasRef}/>

@@ -1,10 +1,16 @@
 import { PureComponent, CSSProperties } from 'react';
-import { Graph, LineData, AxisLineData } from './Graph';
-import { PluginBackend, BatteryStateLog, SystemEventLog, TimeRangeArgs, TimeGroupArgs } from './PluginBackend';
-import { SteamClient } from 'decky-frontend-lib';
+import { Graph, LineProps, AxisLineProps, AxisLabelsProps } from './Graph';
+import { BatteryStateLog, SystemEventLog, TimeRangeArgs, TimeGroupArgs } from './PluginBackend';
 
-type Props = {
-	backendAPI: PluginBackend
+const DaysOfTheWeek = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+
+export type BatteryGraphDataProvider = {
+	getBatteryStateLogs: (args: TimeRangeArgs & TimeGroupArgs) => Promise<BatteryStateLog[]>
+	getSystemEventLogs: (args: TimeRangeArgs) => Promise<SystemEventLog[]>
+};
+
+export type Props = {
+	dataProvider: BatteryGraphDataProvider
 	width: number
 	height: number
 	style?: CSSProperties
@@ -20,6 +26,8 @@ type LogEntry = {
 
 type LogEntries = {
 	entries: LogEntry[]
+	timeStart: Date,
+	timeEnd: Date,
 	percentPointGroups: Array<[number,number][]>
 	energyPointGroups: Array<[number,number][]>
 	energyRatePointGroups: Array<[number,number][]>
@@ -57,13 +65,53 @@ export class BatteryGraph extends PureComponent<Props,State> {
 	componentWillUnmount(): void {
 		this.mounted = false;
 	}
+
+	static dateStringForTimeRange(date: Date, range: TimeRange) {
+		const timeString = date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+		switch(range) {
+			case 'day':
+			case 'week':
+				return `${DaysOfTheWeek[date.getDay()]} ${timeString}`;
+			
+			case '12hours':
+			case '6hours':
+			case 'hour':
+				return timeString;
+
+			default:
+				console.error("Invalid time range "+range);
+				return date.toString();
+		}
+	}
+
+	static _getGridSpacingForTimeRange(range: TimeRange) {
+		switch(range) {
+			case 'week':
+				return 60 * 60 * 24;
+			
+			case 'day':
+				return 60 * 60;
+
+			case '12hours':
+				return 60 * 60;
+
+			case '6hours':
+				return 60 * 60;
+
+			case 'hour':
+				return 60 * 10;
+
+			default:
+				throw new Error("Invalid time range "+range);
+		}
+	}
 	
-	static _getArgsForTimeRange(now: Date, range: TimeRange, includeGroupArgs: boolean): TimeRangeArgs & TimeGroupArgs {
-		let args: TimeRangeArgs & TimeGroupArgs;
+	static _getArgsForTimeRange(now: Date, range: TimeRange, includeGroupArgs: boolean): TimeRangeArgs & TimeGroupArgs & {timeStart: Date} {
+		let args: TimeRangeArgs & TimeGroupArgs & {timeStart: Date};
 		switch(range) {
 			case 'week':
 				args = {
-					timeStart: new Date(now.getTime() - (60 * 60 * 24 * 7)),
+					timeStart: new Date(now.getTime() - (60 * 60 * 24 * 7 * 1000)),
 					timeStartIncl: true
 				};
 				if(includeGroupArgs) {
@@ -74,7 +122,7 @@ export class BatteryGraph extends PureComponent<Props,State> {
 
 			case 'day':
 				args = {
-					timeStart: new Date(now.getTime() - (60 * 60 * 24)),
+					timeStart: new Date(now.getTime() - (60 * 60 * 24 * 1000)),
 					timeStartIncl: true
 				};
 				if(includeGroupArgs) {
@@ -85,7 +133,7 @@ export class BatteryGraph extends PureComponent<Props,State> {
 
 			case '12hours':
 				args = {
-					timeStart: new Date(now.getTime() - (60 * 60 * 12)),
+					timeStart: new Date(now.getTime() - (60 * 60 * 12 * 1000)),
 					timeStartIncl: true
 				};
 				if(includeGroupArgs) {
@@ -96,7 +144,7 @@ export class BatteryGraph extends PureComponent<Props,State> {
 
 			case '6hours':
 				args = {
-					timeStart: new Date(now.getTime() - (60 * 60 * 6)),
+					timeStart: new Date(now.getTime() - (60 * 60 * 6 * 1000)),
 					timeStartIncl: true
 				};
 				if(includeGroupArgs) {
@@ -107,7 +155,7 @@ export class BatteryGraph extends PureComponent<Props,State> {
 			
 			case 'hour':
 				args = {
-					timeStart: new Date(now.getTime() - (60 * 60)),
+					timeStart: new Date(now.getTime() - (60 * 60 * 1000)),
 					timeStartIncl: true
 				};
 				if(includeGroupArgs) {
@@ -157,34 +205,43 @@ export class BatteryGraph extends PureComponent<Props,State> {
 	}
 
 	async refreshBatteryData(timeRange: TimeRange) {
-		const {now, batteryLogs, systemEventLogs} = await this.fetchBatteryData(timeRange);
+		const {timeStart, now, batteryStateLogs, systemEventLogs} = await this.fetchBatteryData(timeRange);
 		if(!this.mounted) {
 			return;
 		}
-		this.updateBatteryData(now, timeRange, batteryLogs, systemEventLogs);
+		this.updateBatteryData(now, timeRange, timeStart, now, batteryStateLogs, systemEventLogs);
 	}
 
-	async fetchBatteryData(timeRange: TimeRange): Promise<{now: Date, batteryLogs: BatteryStateLog[], systemEventLogs: SystemEventLog[]}> {
-		const { backendAPI } = this.props;
+	async fetchBatteryData(timeRange: TimeRange): Promise<{
+		timeStart: Date,
+		now: Date,
+		batteryStateLogs: BatteryStateLog[],
+		batteryStateArgs: TimeRangeArgs & TimeGroupArgs,
+		systemEventLogs: SystemEventLog[],
+		systemEventArgs: TimeRangeArgs}> {
+		const { dataProvider } = this.props;
 		const now = new Date();
-		const batStateArgs = BatteryGraph._getArgsForTimeRange(now, timeRange, true);
-		const sysEvtArgs = BatteryGraph._getArgsForTimeRange(now, timeRange, false);
-		const [batteryLogs,systemEventLogs] = await Promise.all([
-			backendAPI.getBatteryStateLogs(batStateArgs),
-			backendAPI.getSystemEventLogs(sysEvtArgs)
+		const batteryStateArgs = BatteryGraph._getArgsForTimeRange(now, timeRange, true);
+		const systemEventArgs = BatteryGraph._getArgsForTimeRange(now, timeRange, false);
+		const timeStart: Date = batteryStateArgs.timeStart;
+		const [batteryStateLogs,systemEventLogs] = await Promise.all([
+			dataProvider.getBatteryStateLogs(batteryStateArgs),
+			dataProvider.getSystemEventLogs(systemEventArgs)
 		]);
-		return {now, batteryLogs, systemEventLogs};
+		return {timeStart, now, batteryStateLogs, batteryStateArgs, systemEventLogs, systemEventArgs};
 	}
 
-	updateBatteryData(now: Date, timeRange: TimeRange, batteryLogs: BatteryStateLog[], systemEventLogs: SystemEventLog[]) {
+	updateBatteryData(updatedAt: Date, timeRange: TimeRange, timeStart: Date, timeEnd: Date, batteryLogs: BatteryStateLog[], systemEventLogs: SystemEventLog[]) {
 		const logEntries: LogEntries = {
 			entries: [],
+			timeStart,
+			timeEnd,
 			percentPointGroups: [],
 			energyPointGroups: [],
 			energyRatePointGroups: [],
 			systemEvents: systemEventLogs,
 			systemEventPoints: [],
-			lastUpdated: now,
+			lastUpdated: updatedAt,
 		};
 		let percentGroup: [number,number][] = [];
 		let energyGroup: [number,number][] = [];
@@ -203,53 +260,59 @@ export class BatteryGraph extends PureComponent<Props,State> {
 				energyRateGroup = [];
 			}
 		};
-		for(const logEntry of this.orderLogs(batteryLogs, systemEventLogs)) {
-			const logtimeSeconds = (logEntry.data.time.getTime() / 1000.0);
-			switch(logEntry.type) {
-				case 'battery': {
-					const log: BatteryStateLog = logEntry.data as BatteryStateLog;
-					// update energy-full variable
-					if(logEntries.energyFull == null) {
-						logEntries.energyFull = log.energy_full_Wh;
-					} else if(logEntries.energyFull != log.energy_full_Wh) {
-						console.warn("multiple values for energy-full in battery logs");
-						if(logEntries.energyFull < log.energy_full_Wh) {
+		const logGen = this.orderLogs(batteryLogs, systemEventLogs);
+		let logEntryNode = logGen.next();
+		while(!logEntryNode.done) {
+			const logEntry = logEntryNode.value;
+			if(logEntry != null) {
+				const logtimeSeconds = (logEntry.data.time.getTime() / 1000.0);
+				switch(logEntry.type) {
+					case 'battery': {
+						const log: BatteryStateLog = logEntry.data as BatteryStateLog;
+						// update energy-full variable
+						if(logEntries.energyFull == null) {
 							logEntries.energyFull = log.energy_full_Wh;
+						} else if(logEntries.energyFull != log.energy_full_Wh) {
+							console.warn("multiple values for energy-full in battery logs");
+							if(logEntries.energyFull < log.energy_full_Wh) {
+								logEntries.energyFull = log.energy_full_Wh;
+							}
 						}
-					}
-					// update energy-full-design variable
-					if(logEntries.energyFullDesign == null) {
-						logEntries.energyFullDesign = log.energy_full_design_Wh;
-					} else if(logEntries.energyFullDesign != log.energy_full_design_Wh) {
-						console.warn("multiple values for energy-full-design in battery logs");
-						if(logEntries.energyFullDesign < log.energy_full_design_Wh) {
+						// update energy-full-design variable
+						if(logEntries.energyFullDesign == null) {
 							logEntries.energyFullDesign = log.energy_full_design_Wh;
+						} else if(logEntries.energyFullDesign != log.energy_full_design_Wh) {
+							console.warn("multiple values for energy-full-design in battery logs");
+							if(logEntries.energyFullDesign < log.energy_full_design_Wh) {
+								logEntries.energyFullDesign = log.energy_full_design_Wh;
+							}
 						}
-					}
-					// add data entries
-					percentGroup.push([
-						logtimeSeconds,
-						log.percent_current
-					]);
-					energyGroup.push([
-						logtimeSeconds,
-						log.energy_Wh
-					]);
-					energyRateGroup.push([
-						logtimeSeconds,
-						log.energy_rate_W
-					]);
-				} break;
-				
-				case 'system-event': {
-					const log: SystemEventLog = logEntry.data as SystemEventLog;
-					if (log.event == 'suspend' || log.event == 'resume') {
-						finishOpenGroups();
-					}
-					logEntries.systemEvents.push(log);
-					logEntries.systemEventPoints.push(logtimeSeconds);
-				} break;
+						// add data entries
+						percentGroup.push([
+							logtimeSeconds,
+							log.percent_current
+						]);
+						energyGroup.push([
+							logtimeSeconds,
+							log.energy_Wh
+						]);
+						energyRateGroup.push([
+							logtimeSeconds,
+							log.energy_rate_W
+						]);
+					} break;
+					
+					case 'system-event': {
+						const log: SystemEventLog = logEntry.data as SystemEventLog;
+						if (log.event == 'suspend' || log.event == 'resume') {
+							finishOpenGroups();
+						}
+						logEntries.systemEvents.push(log);
+						logEntries.systemEventPoints.push(logtimeSeconds);
+					} break;
+				}
 			}
+			logEntryNode = logGen.next();
 		}
 		finishOpenGroups();
 		const logEntriesMap = {...this.state.logEntriesMap};
@@ -260,12 +323,20 @@ export class BatteryGraph extends PureComponent<Props,State> {
 	}
 	
 	render() {
-		let { width, height } = this.props;
+		const props = this.props;
+		let { width, height } = props;
 		const { logEntriesMap, timeRange } = this.state;
 		const logEntries = logEntriesMap[timeRange];
-		const lines: LineData[] = [];
-		//const axisLines: AxisLineData[] = [];
+		const lines: LineProps[] = [];
+		const axisLines: AxisLineProps[] = [];
+		let bottomAxisLabels: AxisLabelsProps | null = null;
+		let xMin: number | undefined = undefined;
+		let xMax: number | undefined = undefined;
 		if(logEntries) {
+			const timeStart = logEntries.timeStart;
+			const timeEnd = logEntries.timeEnd;
+			xMin = timeStart.getTime() / 1000.0;
+			xMax = timeEnd.getTime() / 1000.0;
 			lines.push({
 				displayName: "Percent",
 				pointGroups: logEntries.percentPointGroups,
@@ -273,16 +344,16 @@ export class BatteryGraph extends PureComponent<Props,State> {
 				strokeStyle: 'lightblue',
 				fill: true,
 				
-				dotRadius: 5,
+				dotRadius: 2,
 				dotsFillStyle: 'lightblue',
 				
-				showLabels: true,
+				showLabels: false,
 				labelTextAlign: 'center',
 				labelFillStyle: 'white',
 				labelOffsetY: -8,
-				getLabelText: ({ index, x: timeSeconds, y: percent }) => `${percent}%`
+				getLabelText: ({ index, x: timeSeconds, y: percent }) => `${percent.toFixed(2)}%`
 			});
-			/*axisLines.push({
+			axisLines.push({
 				axis: 'x',
 				points: logEntries.systemEventPoints,
 				strokeStyle: 'gray',
@@ -291,21 +362,44 @@ export class BatteryGraph extends PureComponent<Props,State> {
 
 				showLabels: true,
 				getLabelText: ({ index, val }) => logEntries.systemEvents[index].event
-			});*/
+			});
+			bottomAxisLabels = {
+				labels: [
+					[xMin, BatteryGraph.dateStringForTimeRange(timeStart, timeRange)],
+					[xMax, BatteryGraph.dateStringForTimeRange(timeEnd, timeRange)]
+				],
+				padding: 4,
+				labelFillStyle: 'white',
+				innerAlignEdgeLabels: true
+			};
 		}
+
 		return (
 			<Graph
 				lines={lines}
-				//axisLines={axisLines}
+				axisLines={axisLines}
+				rightAxisLabels={{
+					labels: [
+						[0,'0%'],
+						[100, '100%']
+					],
+					padding: 4,
+					labelFillStyle: 'white',
+					innerAlignEdgeLabels: true
+				}}
+				bottomAxisLabels={bottomAxisLabels}
+				xMin={xMin}
+				xMax={xMax}
 				yMin={0}
 				yMax={100}
 				width={width}
 				height={height}
-				style={this.props.style}
-				paddingLeft={20}
-				paddingRight={20}
-				gridSpacingX={1}
-				gridSpacingY={1}/>
+				paddingTop={10}
+				gridSpacingX={BatteryGraph._getGridSpacingForTimeRange(timeRange)}
+				gridSpacingY={10}
+				borderStrokeStyle={'lightgray'}
+				canvasSmoothingEnabled={false}
+				style={props.style}/>
 		);
 	}
 }

@@ -33,7 +33,7 @@ class SystemSignalListener:
 	_loop: asyncio.AbstractEventLoop = None
 	_conn: dbussy.Connection = None
 	_listening: bool = False
-
+	
 	on_system_suspend: Callable[[],None]
 	on_system_resume: Callable[[],None]
 	on_system_shutdown: Callable[[],None]

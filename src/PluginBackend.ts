@@ -1,16 +1,19 @@
 import { ServerAPI } from "decky-frontend-lib";
 
+export type BatteryState = 'charging' | 'discharging' | 'fully-charged';
+
 export type BatteryStateLog = {
 	device_path: string
 	time: Date
-	state: string
+	state: BatteryState
 	energy_Wh: number
 	energy_empty_Wh: number
 	energy_full_Wh: number
 	energy_full_design_Wh: number
 	energy_rate_W: number
 	voltage_V: number
-	seconds_till_full: number
+	seconds_till_full: number | null
+	seconds_till_empty: number | null
 	percent_current: number
 	percent_capacity: number
 };

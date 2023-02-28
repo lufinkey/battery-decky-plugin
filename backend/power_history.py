@@ -14,6 +14,9 @@ logger = logging.getLogger()
 
 tzinfo_utc = datetime.datetime.utcnow().tzinfo
 
+class PowerHistoryDB:
+	pass
+
 
 
 @dataclass
@@ -28,6 +31,7 @@ class BatteryStateLog:
 	energy_rate_W: float
 	voltage_V: float
 	seconds_till_full: float
+	seconds_till_empty: float
 	percent_current: float
 	percent_capacity: float
 
@@ -49,10 +53,19 @@ class BatteryStateLog:
 			energy_rate_W REAL,
 			voltage_V REAL,
 			seconds_till_full REAL,
+			seconds_till_empty REAL,
 			percent_current REAL,
 			percent_capacity REAL,
 			PRIMARY KEY(device_path, time)
 		)'''.format(tblname)
+	
+	@classmethod
+	async def get_sql_migrations(cls, column_names: List[str]) -> List[str]:
+		tblname = cls.get_sql_tablename()
+		migrations = list()
+		if 'seconds_till_empty' not in column_names:
+			migrations.append('ALTER {0} ADD COLUMN seconds_till_empty REAL'.format(tblname))
+		return migrations
 
 	@classmethod
 	def from_device_info(cls, logtime_utc: datetime.datetime, device_path: str, info: UPowerDeviceInfo) -> 'BatteryStateLog':
@@ -70,6 +83,7 @@ class BatteryStateLog:
 			energy_rate_W = bi.energy_rate_W,
 			voltage_V = bi.voltage_V,
 			seconds_till_full = bi.seconds_till_full,
+			seconds_till_empty = bi.seconds_till_empty,
 			percent_current = bi.percent_current,
 			percent_capacity = bi.percent_capacity)
 	
@@ -85,6 +99,7 @@ class BatteryStateLog:
 			energy_rate_W,
 			voltage_V,
 			seconds_till_full,
+			seconds_till_empty,
 			percent_current,
 			percent_capacity) = dbtuple[0:12]
 		return BatteryStateLog(
@@ -98,6 +113,7 @@ class BatteryStateLog:
 			energy_rate_W = energy_rate_W,
 			voltage_V = voltage_V,
 			seconds_till_full = seconds_till_full,
+			seconds_till_empty = seconds_till_empty,
 			percent_current = percent_current,
 			percent_capacity = percent_capacity)
 	
@@ -113,6 +129,7 @@ class BatteryStateLog:
 			self.energy_rate_W,
 			self.voltage_V,
 			self.seconds_till_full,
+			self.seconds_till_empty,
 			self.percent_current,
 			self.percent_capacity)
 	
@@ -129,6 +146,7 @@ class BatteryStateLog:
 			energy_rate_W = d['energy_rate_W'],
 			voltage_V = d['voltage_V'],
 			seconds_till_full = d['seconds_till_full'],
+			seconds_till_empty = d['seconds_till_empty'],
 			percent_current = d['percent_current'],
 			percent_capacity = d['percent_capacity'])
 	
@@ -144,6 +162,7 @@ class BatteryStateLog:
 			'energy_rate_W': self.energy_rate_W,
 			'voltage_V': self.voltage_V,
 			'seconds_till_full': self.seconds_till_full,
+			'seconds_till_empty': self.seconds_till_empty,
 			'percent_current': self.percent_current,
 			'percent_capacity': self.percent_capacity
 		}
@@ -215,7 +234,9 @@ class PowerHistoryDB:
 	def _setup_db(self):
 		self._commit_sql(BatteryStateLog.get_sql_createtable(), parameters=[])
 		self._commit_sql(SystemEventLog.get_sql_createtable(), parameters=[])
-
+		for sql_mig in BatteryStateLog.get_sql_migrations():
+			self._commit_sql(sql_mig)
+	
 	def _prepare_db_loop(self):
 		if self.db_loop is not None:
 			return
@@ -247,6 +268,18 @@ class PowerHistoryDB:
 			raise RuntimeError("No connection available to run query")
 		cursor.execute(sql, parameters)
 		connection.commit()
+	
+	def _get_column_names(self, tablename: str) -> List[str]:
+		connection = self.connection
+		cursor = self.cursor
+		if cursor is None:
+			raise RuntimeError("No cursor available to run query")
+		elif connection is None:
+			raise RuntimeError("No connection available to run query")
+		cursor.execute("SELECT * FROM {0} WHERE 1=0".format(tablename))
+		column_names = [d[0] for d in cursor.description]
+		cursor.fetchall()
+		return column_names
 	
 
 

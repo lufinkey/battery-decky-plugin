@@ -2,6 +2,9 @@
 import { Component, CSSProperties } from 'react';
 import { Canvas } from './Canvas';
 
+const AxisLabelsDefaultWidth = 32;
+const AxisLabelsDefaultPadding = 2;
+
 type Rect = {
 	left: number
 	top: number
@@ -9,14 +12,15 @@ type Rect = {
 	bottom: number
 };
 
+type CanvasStrokeStyle = string | CanvasGradient | CanvasPattern;
+type CanvasFillStyle = string | CanvasGradient | CanvasPattern;
 
-type LabelFillStyle = string | CanvasGradient | CanvasPattern;
+
 type LabelProps = {
 	labelFont?: string
 	labelTextBaseline?: CanvasTextBaseline
 	labelTextAlign?: CanvasTextAlign
-	labelFillStyle?: LabelFillStyle
-	minLabelInterval?: number
+	labelFillStyle?: CanvasFillStyle
 	labelOffsetX?: number
 	labelOffsetY?: number
 };
@@ -24,6 +28,7 @@ type LabelProps = {
 type PointLabelTextGetter = (args: {index: number, x: number, y: number}) => string;
 type PointLabelProps = LabelProps & {
 	getLabelText?: PointLabelTextGetter
+	minLabelInterval?: number
 };
 
 type ValueLabelTextGetter = (args: {index: number, val: number}) => string;
@@ -31,19 +36,19 @@ type ValueLabelTextGetter = (args: {index: number, val: number}) => string;
 
 type LineStyle = {
 	lineWidth?: number
-	strokeStyle?: string
+	strokeStyle?: CanvasStrokeStyle
 
 	fill?: boolean
-	fillStyle?: string
+	fillStyle?: CanvasFillStyle
 
 	showDots?: boolean
-	dotsFillStyle?: string
+	dotsFillStyle?: CanvasFillStyle
 	dotRadius?: number
 
 	showLabels?: boolean
 } & PointLabelProps;
 
-export type LineData = {
+export type LineProps = {
 	points?: [number,number][]
 	pointGroups?: Array<[number,number][]>
 	displayName?: string
@@ -63,16 +68,32 @@ type AxisLineStyle = {
 	getLabelText?: ValueLabelTextGetter
 } & LabelProps;
 
-export type AxisLineData = {
+export type AxisLineProps = {
 	points: number[]
 	axis: Axis
 } & AxisLineStyle;
 
+export type AxisLabelsProps = {
+	labels: [number,string][]
+	areaSize?: number
+	padding?: number,
+	labelFont?: string
+	labelFillStyle?: CanvasFillStyle
+	labelOffsetX?: number
+	labelOffsetY?: number
+	innerAlignEdgeLabels?: boolean
+};
+
 
 
 type Props = {
-	lines?: LineData[]
-	axisLines?: AxisLineData[]
+	lines?: LineProps[]
+	axisLines?: AxisLineProps[]
+
+	leftAxisLabels?: AxisLabelsProps | null
+	rightAxisLabels?: AxisLabelsProps | null
+	topAxisLabels?: AxisLabelsProps | null
+	bottomAxisLabels?: AxisLabelsProps | null
 
 	xMin?: number
 	xMax?: number
@@ -89,9 +110,18 @@ type Props = {
 	paddingRight?: number
 	paddingTop?: number
 	paddingBottom?: number
-	gridStrokeStyle?: string
-	backgroundFillStyle?: string
 
+	backgroundFillStyle?: CanvasFillStyle
+
+	gridStrokeStyle?: CanvasStrokeStyle
+	gridLineWidthX?: number,
+	gridLineWidthY?: number,
+
+	borderStrokeStyle?: CanvasStrokeStyle
+	borderLineWidth?: number,
+
+	canvasSmoothingEnabled?: boolean
+	canvasSmoothingQuality?: ImageSmoothingQuality
 	style?: CSSProperties
 };
 
@@ -102,9 +132,15 @@ type State = {
 
 
 type LayoutProps = {
+	canvasWidth: number,
+	canvasHeight: number,
 	dataRangeX: [number,number]
 	dataRangeY: [number,number]
-	rect: Rect
+	graphRect: Rect,
+	leftAxisLabelsRect: Rect | null,
+	rightAxisLabelsRect: Rect | null,
+	topAxisLabelsRect: Rect | null,
+	bottomAxisLabelsRect: Rect | null
 };
 
 type DataRangeXY = {
@@ -148,18 +184,90 @@ export class Graph extends Component<Props,State> {
 		}
 	}
 
+	calculateAxisLabelsProps(props: AxisLabelsProps | undefined | null): {padding: number, areaSize: number} | null {
+		if((props?.labels?.length ?? 0) == 0) {
+			return null;
+		}
+		return {
+			padding: (props?.padding ?? AxisLabelsDefaultPadding),
+			areaSize: (props?.areaSize ?? AxisLabelsDefaultWidth)
+		};
+	}
+
 	calculateLayoutProps(props: Props): LayoutProps {
 		const { lines, axisLines, width, height,
 			dataPaddingX, dataPaddingY,
 			paddingLeft, paddingRight, paddingTop, paddingBottom } = props;
 		let { xMin, xMax, yMin, yMax } = props;
-		// calculate graph rect
-		const rect: Rect = {
-			left: (paddingLeft ?? 0),
-			top: (paddingTop ?? 0),
-			right: (width - (paddingRight ?? 0)),
-			bottom: (height - (paddingBottom ?? 0))
+		// calculate graph and canvas rect
+		const leftAxisLabelsProps = this.calculateAxisLabelsProps(props.leftAxisLabels);
+		const rightAxisLabelsProps = this.calculateAxisLabelsProps(props.rightAxisLabels);
+		const topAxisLabelsProps = this.calculateAxisLabelsProps(props.topAxisLabels);
+		const bottomAxisLabelsProps = this.calculateAxisLabelsProps(props.bottomAxisLabels);
+		const graphLeft = (paddingLeft ?? 0) + (leftAxisLabelsProps?.areaSize ?? 0) + (leftAxisLabelsProps?.padding ?? 0);
+		const graphTop = (paddingTop ?? 0) + (topAxisLabelsProps ? ((topAxisLabelsProps?.areaSize ?? 0) + (topAxisLabelsProps?.padding ?? 0)) : 0);
+		const rightAreaSize = (rightAxisLabelsProps?.areaSize ?? 0) + (rightAxisLabelsProps?.padding ?? 0) + (paddingRight ?? 0);
+		const bottomAreaSize = (bottomAxisLabelsProps?.areaSize ?? 0) + (bottomAxisLabelsProps?.padding ?? 0) + (paddingBottom ?? 0);
+		const canvasWidth = width;//graphLeft + graphWidth + (rightAxisLabelsProps?.areaSize ?? 0) + (rightAxisLabelsProps?.padding ?? 0) + (paddingRight ?? 0);
+		const canvasHeight = height;//graphTop + graphHeight + (bottomAxisLabelsProps?.areaSize ?? 0) + (bottomAxisLabelsProps?.padding ?? 0) + (paddingBottom ?? 0);
+		let graphWidth = (canvasWidth - rightAreaSize) - graphLeft;
+		if(graphWidth < 0) {
+			graphWidth = 0;
+		}
+		let graphHeight = (canvasHeight - bottomAreaSize) - graphTop;
+		if(graphHeight < 0) {
+			graphHeight = 0;
+		}
+		const graphRect: Rect = {
+			left: graphLeft,
+			top: graphTop,
+			right: graphLeft + graphWidth,
+			bottom: graphTop + graphHeight
 		};
+		// calculate left axis labels rect
+		let leftAxisLabelsRect: Rect | null = null;
+		if(leftAxisLabelsProps != null) {
+			const rectX = graphLeft - leftAxisLabelsProps.padding - leftAxisLabelsProps.areaSize;
+			leftAxisLabelsRect = {
+				left: rectX,
+				top: graphTop,
+				right: rectX + leftAxisLabelsProps.areaSize,
+				bottom: graphTop + graphHeight
+			};
+		}
+		// calculate right axis labels rect
+		let rightAxisLabelsRect: Rect | null = null;
+		if(rightAxisLabelsProps != null) {
+			const rectX = graphLeft + graphWidth + rightAxisLabelsProps.padding;
+			rightAxisLabelsRect = {
+				left: rectX,
+				top: graphTop,
+				right: rectX + rightAxisLabelsProps.areaSize,
+				bottom: graphTop + graphHeight
+			};
+		}
+		// calculate top axis labels rects
+		let topAxisLabelsRect: Rect | null = null;
+		if(topAxisLabelsProps != null) {
+			const rectY = graphTop - topAxisLabelsProps.padding - topAxisLabelsProps.areaSize;
+			topAxisLabelsRect = {
+				left: graphLeft,
+				top: rectY,
+				right: graphLeft + graphWidth,
+				bottom: rectY + topAxisLabelsProps.areaSize
+			};
+		}
+		// calculate bottom axis labels rects
+		let bottomAxisLabelsRect: Rect | null = null;
+		if(bottomAxisLabelsProps != null) {
+			const rectY = graphTop + graphHeight + bottomAxisLabelsProps.padding;
+			bottomAxisLabelsRect = {
+				left: graphLeft,
+				top: rectY,
+				right: graphLeft + graphWidth,
+				bottom: rectY + bottomAxisLabelsProps.areaSize
+			};
+		}
 		// calculate padding values
 		if(xMin == null || xMax == null || yMin == null || yMax == null) {
 			let xMinPadding = 0;
@@ -250,13 +358,19 @@ export class Graph extends Component<Props,State> {
 			}
 		}
 		return {
+			canvasWidth,
+			canvasHeight,
 			dataRangeX: [xMin,xMax],
 			dataRangeY: [yMin,yMax],
-			rect
+			graphRect,
+			leftAxisLabelsRect,
+			rightAxisLabelsRect,
+			topAxisLabelsRect,
+			bottomAxisLabelsRect
 		};
 	}
 
-	calculateLineDataRange(lines: LineData[]): DataRangeXY {
+	calculateLineDataRange(lines: LineProps[]): DataRangeXY {
 		const dataRange: DataRangeXY = {
 			x: undefined,
 			y: undefined
@@ -317,7 +431,7 @@ export class Graph extends Component<Props,State> {
 		return dataRange;
 	}
 
-	calculateAxisLineDataRange(axisLines: AxisLineData[]): DataRangeXY {
+	calculateAxisLineDataRange(axisLines: AxisLineProps[]): DataRangeXY {
 		const dataRange: DataRangeXY = {
 			x: undefined,
 			y: undefined
@@ -366,38 +480,56 @@ export class Graph extends Component<Props,State> {
 	calculateCanvasPointX(dataPointX: number, dataRangeXMin: number, dataWidth: number, graphXMin: number, graphWidth: number): number {
 		return graphXMin + (((dataPointX - dataRangeXMin) / dataWidth) * graphWidth);
 	}
+	calculateCanvasPointXFromLayoutProps(dataPointX: number, {dataRangeX, graphRect}: LayoutProps): number {
+		return this.calculateCanvasPointX(dataPointX, dataRangeX[0], (dataRangeX[1] - dataPointX[0]), graphRect.left, (graphRect.right - graphRect.left));
+	}
 	calculateCanvasPointY(dataPointY: number, dataRangeYMin: number, dataHeight: number, graphYMin: number, graphHeight: number): number {
 		return graphYMin + (graphHeight - ((dataPointY - dataRangeYMin) / dataHeight) * graphHeight);
 	}
-	calculateCanvasPoint(dataPoint: [number,number], {dataRangeX, dataRangeY, rect}: LayoutProps): [number,number] {
+	calculateCanvasPointYFromLayoutProps(dataPointY: number, {dataRangeY, graphRect}: LayoutProps): number {
+		return this.calculateCanvasPointY(dataPointY, dataRangeY[0], (dataRangeY[1] - dataRangeY[0]), graphRect.top, (graphRect.bottom - graphRect.top));
+	}
+	calculateCanvasPoint(dataPoint: [number,number], {dataRangeX, dataRangeY, graphRect}: LayoutProps): [number,number] {
 		return [
-			this.calculateCanvasPointX(dataPoint[0], dataRangeX[0], (dataRangeX[1] - dataRangeX[0]), rect.left, (rect.right - rect.left)),
-			this.calculateCanvasPointY(dataPoint[1], dataRangeY[0], (dataRangeY[1] - dataRangeY[0]), rect.top, (rect.bottom - rect.top))
+			this.calculateCanvasPointX(dataPoint[0], dataRangeX[0], (dataRangeX[1] - dataRangeX[0]), graphRect.left, (graphRect.right - graphRect.left)),
+			this.calculateCanvasPointY(dataPoint[1], dataRangeY[0], (dataRangeY[1] - dataRangeY[0]), graphRect.top, (graphRect.bottom - graphRect.top))
 		];
 	}
 
 
 
-	draw(context: CanvasRenderingContext2D) {
+	draw(context: CanvasRenderingContext2D, layoutProps: LayoutProps) {
+		context.save();
 		// get props
 		const props = this.props;
 		const {
 			lines, axisLines,
-			gridSpacingX, gridSpacingY,
-			backgroundFillStyle, gridStrokeStyle,
-			 } = this.props;
-		const layoutProps = this.calculateLayoutProps(props);
-		const { rect } = layoutProps;
-
+			gridSpacingX, gridSpacingY, gridStrokeStyle, gridLineWidthX, gridLineWidthY,
+			backgroundFillStyle,
+			borderStrokeStyle, borderLineWidth
+		} = props;
+		const {
+			graphRect,
+			leftAxisLabelsRect,
+			rightAxisLabelsRect,
+			topAxisLabelsRect,
+			bottomAxisLabelsRect } = layoutProps;
+		// set canvas settings if needed
+		if(props.canvasSmoothingEnabled != null) {
+			context.imageSmoothingEnabled = props.canvasSmoothingEnabled;
+		}
+		if(props.canvasSmoothingQuality != null) {
+			context.imageSmoothingQuality = props.canvasSmoothingQuality;
+		}
 		// draw background
 		if(backgroundFillStyle) {
 			context.save();
 			context.fillStyle = backgroundFillStyle;
 			context.fillRect(
-				rect.left,
-				rect.top,
-				rect.right-layoutProps.rect.left,
-				rect.bottom-layoutProps.rect.top);
+				graphRect.left,
+				graphRect.top,
+				graphRect.right - graphRect.left,
+				graphRect.bottom - graphRect.top);
 			context.restore();
 		}
 		
@@ -405,10 +537,19 @@ export class Graph extends Component<Props,State> {
 		if(gridSpacingX || gridSpacingY) {
 			context.save();
 			context.strokeStyle = gridStrokeStyle ?? 'lightgray';
-			this.drawGrid(context, layoutProps, gridSpacingX, gridSpacingY);
+			this.drawGrid(context, layoutProps, gridSpacingX, gridSpacingY, gridLineWidthX, gridLineWidthY);
 			context.restore();
 		}
 
+		// draw border
+		if(borderStrokeStyle) {
+			context.save();
+			context.strokeStyle = borderStrokeStyle;
+			context.lineWidth = borderLineWidth ?? context.lineWidth;
+			this.drawBorder(context, layoutProps.graphRect);
+			context.restore();
+		}
+		
 		// draw lines if available
 		if(lines) {
 			// draw each line
@@ -421,7 +562,7 @@ export class Graph extends Component<Props,State> {
 						const canvasPoint: [number,number] = this.calculateCanvasPoint(point, layoutProps);
 						canvasPoints.push(canvasPoint);
 					}
-					this.drawLinePointGroup(context, rect, lineData, points, canvasPoints);
+					this.drawLinePointGroup(context, graphRect, lineData, points, canvasPoints);
 				}
 				// draw all point groups for line
 				if(pointGroups && pointGroups.length > 0) {
@@ -431,7 +572,7 @@ export class Graph extends Component<Props,State> {
 							const canvasPoint: [number,number] = this.calculateCanvasPoint(point, layoutProps);
 							canvasPoints.push(canvasPoint);
 						}
-						this.drawLinePointGroup(context, rect, lineData, group, canvasPoints);
+						this.drawLinePointGroup(context, graphRect, lineData, group, canvasPoints);
 					}
 				}
 			}
@@ -443,38 +584,68 @@ export class Graph extends Component<Props,State> {
 				this.drawAxisLinesGroup(context, axisLineData, layoutProps);
 			}
 		}
+		// draw axis labels
+		this.drawAxisLabels(context, props, layoutProps);
+		context.restore();
 	}
 
 
 
-	drawGrid(context: CanvasRenderingContext2D, layoutProps: LayoutProps, gridSpacingX: number | null | undefined, gridSpacingY: number | null | undefined) {
+	drawGrid(context: CanvasRenderingContext2D, layoutProps: LayoutProps, gridSpacingX: number | null | undefined, gridSpacingY: number | null | undefined, gridLineWidthX: number | null | undefined, gridLineWidthY: number | null | undefined) {
 		if(!gridSpacingX && !gridSpacingY) {
 			return;
 		}
-		const { rect, dataRangeX, dataRangeY } = layoutProps;
-		context.beginPath();
+		const { graphRect, dataRangeX, dataRangeY } = layoutProps;
+		const originalLineWidth = context.lineWidth;
 		if(gridSpacingX) {
-			const graphWidth = rect.right - rect.left;
+			context.beginPath();
+			context.lineWidth = gridLineWidthX ?? originalLineWidth;
+			const graphWidth = graphRect.right - graphRect.left;
 			const dataWidth = dataRangeX[1] - dataRangeX[0];
 			const gridSpacingX_canvas = (gridSpacingX / dataWidth) * graphWidth;
 			if(gridSpacingX_canvas > 0){
-				for (let x=rect.left; x<=rect.right; x+=gridSpacingX_canvas){
-					context.moveTo(x, rect.top);
-					context.lineTo(x, rect.bottom);
+				for (let x=graphRect.left; x<=graphRect.right; x+=gridSpacingX_canvas){
+					context.moveTo(x, graphRect.top);
+					context.lineTo(x, graphRect.bottom);
 				}
 			}
+			context.stroke();
+			context.closePath();
 		}
 		if(gridSpacingY) {
-			const graphHeight = rect.bottom - rect.top;
+			context.beginPath();
+			context.lineWidth = gridLineWidthY ?? originalLineWidth;
+			const graphHeight = graphRect.bottom - graphRect.top;
 			const dataHeight = dataRangeY[1] - dataRangeY[0];
 			const gridSpacingY_canvas = (gridSpacingY / dataHeight) * graphHeight;
 			if(gridSpacingY_canvas > 0){
-				for (var y=rect.bottom; y>=rect.top; y-=gridSpacingY_canvas){
-					context.moveTo(rect.left, y);
-					context.lineTo(rect.right, y);
+				for (var y=graphRect.bottom; y>=graphRect.top; y-=gridSpacingY_canvas){
+					context.moveTo(graphRect.left, y);
+					context.lineTo(graphRect.right, y);
 				}
 			}
+			context.stroke();
+			context.closePath();
 		}
+		context.lineWidth = originalLineWidth;
+	}
+
+	drawBorder(context: CanvasRenderingContext2D, rect: Rect) {
+		context.beginPath();
+
+		// draw top line
+		context.moveTo(rect.left, rect.top);
+		context.lineTo(rect.right, rect.top);
+		// draw left line
+		context.moveTo(rect.left, rect.top);
+		context.lineTo(rect.left, rect.bottom);
+		// draw right line
+		context.moveTo(rect.right, rect.top);
+		context.lineTo(rect.right, rect.bottom);
+		// draw bottom line
+		context.moveTo(rect.left, rect.bottom);
+		context.lineTo(rect.right, rect.bottom);
+
 		context.stroke();
 		context.closePath();
 	}
@@ -636,7 +807,7 @@ export class Graph extends Component<Props,State> {
 
 
 
-	drawAxisLinesGroup(context: CanvasRenderingContext2D, axisLineData: AxisLineData, layoutProps: LayoutProps) {
+	drawAxisLinesGroup(context: CanvasRenderingContext2D, axisLineData: AxisLineProps, layoutProps: LayoutProps) {
 		const { points, axis, lineInsetMin, lineInsetMax, labelPosition, getLabelText } = axisLineData;
 		if(!points || points.length == 0) {
 			return;
@@ -645,30 +816,30 @@ export class Graph extends Component<Props,State> {
 			console.error("Missing 'axis' prop. Got "+axis);
 			return;
 		}
-		const { dataRangeX, dataRangeY, rect } = layoutProps;
+		const { dataRangeX, dataRangeY, graphRect } = layoutProps;
 		const dataWidth = dataRangeX[1] - dataRangeX[0];
 		const dataHeight = dataRangeY[1] - dataRangeY[0];
-		const graphWidth = rect.right - rect.left;
-		const graphHeight = rect.bottom - rect.top;
+		const graphWidth = graphRect.right - graphRect.left;
+		const graphHeight = graphRect.bottom - graphRect.top;
 		// calculate canvas points
 		const canvasPoints: number[] = [];
 		let lineStart: number;
 		let lineEnd: number;
 		switch(axis) {
 			case 'x': {
-				lineStart = rect.bottom - (lineInsetMin ?? 0);
-				lineEnd = rect.top + (lineInsetMax ?? 0);
+				lineStart = graphRect.bottom - (lineInsetMin ?? 0);
+				lineEnd = graphRect.top + (lineInsetMax ?? 0);
 				for(const lineDataX of points) {
-					const lineCanvasX = this.calculateCanvasPointX(lineDataX, dataRangeX[0], dataWidth, rect.left, graphWidth);
+					const lineCanvasX = this.calculateCanvasPointX(lineDataX, dataRangeX[0], dataWidth, graphRect.left, graphWidth);
 					canvasPoints.push(lineCanvasX);
 				}
 			} break;
 
 			case 'y': {
-				lineStart = rect.left + (lineInsetMin ?? 0);
-				lineEnd = rect.right - (lineInsetMax ?? 0);
+				lineStart = graphRect.left + (lineInsetMin ?? 0);
+				lineEnd = graphRect.right - (lineInsetMax ?? 0);
 				for(const lineDataY of points) {
-					const lineCanvasY = this.calculateCanvasPointY(lineDataY, dataRangeY[0], dataHeight, rect.top, graphHeight);
+					const lineCanvasY = this.calculateCanvasPointY(lineDataY, dataRangeY[0], dataHeight, graphRect.top, graphHeight);
 					canvasPoints.push(lineCanvasY);
 				}
 			} break;
@@ -684,7 +855,7 @@ export class Graph extends Component<Props,State> {
 		// draw line labels if needed
 		const showLabels = axisLineData.showLabels ?? (axisLineData.getLabelText != null);
 		if(showLabels) {
-			this.drawAxisLines(context, axis, canvasPoints, lineStart, lineEnd);
+			this.drawAxisLineLabels(context, axis, axisLineData.points, canvasPoints, lineStart, lineEnd, axisLineData);
 		}
 		context.restore();
 	}
@@ -781,19 +952,134 @@ export class Graph extends Component<Props,State> {
 	}
 
 
+	drawAxisLabels(context: CanvasRenderingContext2D, props: Props, layoutProps: LayoutProps) {
+		if(props.leftAxisLabels != null && layoutProps.leftAxisLabelsRect != null) {
+			this.drawAxisLabelsY(context, layoutProps.leftAxisLabelsRect, 'left', props.leftAxisLabels, layoutProps);
+		}
+		if(props.topAxisLabels != null && layoutProps.topAxisLabelsRect != null) {
+			this.drawAxisLabelsX(context, layoutProps.topAxisLabelsRect, 'top', props.topAxisLabels, layoutProps);
+		}
+		if(props.rightAxisLabels != null && layoutProps.rightAxisLabelsRect != null) {
+			this.drawAxisLabelsY(context, layoutProps.rightAxisLabelsRect, 'right', props.rightAxisLabels, layoutProps);
+		}
+		if(props.bottomAxisLabels != null && layoutProps.bottomAxisLabelsRect != null) {
+			this.drawAxisLabelsX(context, layoutProps.bottomAxisLabelsRect, 'bottom', props.bottomAxisLabels, layoutProps);
+		}
+	}
+
+	drawAxisLabelsX(context: CanvasRenderingContext2D, rect: Rect, side: 'top' | 'bottom', axisLabelsProps: AxisLabelsProps, layoutProps: LayoutProps) {
+		const { dataRangeX, graphRect } = layoutProps;
+		const dataWidth = dataRangeX[1] - dataRangeX[0];
+		const graphWidth = graphRect.right - graphRect.left;
+		let canvasPointY: number;
+		let textBaseline: CanvasTextBaseline;
+		switch(side) {
+			case 'top':
+				canvasPointY = rect.bottom;
+				textBaseline = 'bottom';
+				break;
+			case 'bottom':
+				canvasPointY = rect.top;
+				textBaseline = 'top';
+				break;
+			default:
+				console.error(`Unknown side ${side}`);
+				return;
+		}
+		const axisLabelsStyle: LabelProps = {
+			labelFillStyle: axisLabelsProps.labelFillStyle,
+			labelFont: axisLabelsProps.labelFont,
+			labelTextAlign: 'center',
+			labelOffsetX: axisLabelsProps.labelOffsetX,
+			labelOffsetY: axisLabelsProps.labelOffsetY,
+			labelTextBaseline: textBaseline
+		};
+		for(const [x,label] of axisLabelsProps.labels) {
+			if(label == null || label.length == 0) {
+				continue;
+			}
+			const canvasPointX = this.calculateCanvasPointX(x, dataRangeX[0], dataWidth, graphRect.left, graphWidth);
+			let labelStyle = axisLabelsStyle;
+			if(axisLabelsProps.innerAlignEdgeLabels ?? false) {
+				if(x == dataRangeX[0]) {
+					labelStyle = {
+						...labelStyle,
+						labelTextAlign: 'left'
+					};
+				} else if(x == dataRangeX[1]) {
+					labelStyle = {
+						...labelStyle,
+						labelTextAlign: 'right'
+					};
+				}
+			}
+			this.drawLabel(context, label, [canvasPointX, canvasPointY], labelStyle);
+		}
+	}
+
+	drawAxisLabelsY(context: CanvasRenderingContext2D, rect: Rect, side: 'left' | 'right', axisLabelsProps: AxisLabelsProps, layoutProps: LayoutProps) {
+		const { dataRangeY, graphRect } = layoutProps;
+		const dataHeight = dataRangeY[1] - dataRangeY[0];
+		const graphHeight = graphRect.bottom - graphRect.top;
+		let canvasPointX: number;
+		let textAlign: CanvasTextAlign;
+		switch(side) {
+			case 'left':
+				canvasPointX = rect.right;
+				textAlign = 'right';
+				break;
+			case 'right':
+				canvasPointX = rect.left;
+				textAlign = 'left';
+				break;
+			default:
+				console.error(`Unknown side ${side}`);
+				return;
+		}
+		const axisLabelsStyle: LabelProps = {
+			labelFillStyle: axisLabelsProps.labelFillStyle,
+			labelFont: axisLabelsProps.labelFont,
+			labelTextAlign: textAlign,
+			labelOffsetX: axisLabelsProps.labelOffsetX,
+			labelOffsetY: axisLabelsProps.labelOffsetY,
+			labelTextBaseline: 'middle'
+		};
+		for(const [y,label] of axisLabelsProps.labels) {
+			if(label == null || label.length == 0) {
+				continue;
+			}
+			const canvasPointY = this.calculateCanvasPointY(y, dataRangeY[0], dataHeight, graphRect.top, graphHeight);
+			let labelStyle = axisLabelsStyle;
+			if(axisLabelsProps.innerAlignEdgeLabels ?? false) {
+				if(y == dataRangeY[0]) {
+					labelStyle = {
+						...labelStyle,
+						labelTextBaseline: 'bottom'
+					};
+				} else if(y == dataRangeY[1]) {
+					labelStyle = {
+						...labelStyle,
+						labelTextBaseline: 'top'
+					};
+				}
+			}
+			this.drawLabel(context, label, [canvasPointX, canvasPointY], labelStyle);
+		}
+	}
+
+
 
 	render() {
 		const props = this.props;
-		const width = props.width ?? 268;
-		const height = props.height ?? 200;
+		const layoutProps = this.calculateLayoutProps(props);
 		return (
 			<Canvas
-				width={width}
-				height={height}
+				width={layoutProps.canvasWidth}
+				height={layoutProps.canvasHeight}
 				style={props.style}
 				clearBeforeDraw={true}
 				onDraw={(canvas, context, props) => {
-					this.draw(context);
+					this.draw(context, layoutProps);
 				}}/>
 		);
 	}

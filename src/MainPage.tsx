@@ -8,17 +8,20 @@ import { VFC } from 'react';
 import { BatteryGraph } from './BatteryGraph';
 import { PluginBackend } from './PluginBackend';
 
+const BatteryGraphWidth = 268;
+const BatteryGraphHeight = 200;
+
 export const MainPage: VFC<{ backendAPI: PluginBackend }> = ({ backendAPI }) => {
 	return (
 		<PanelSection title="Panel Section">
 			<PanelSectionRow>
 				<BatteryGraph
-					width={268}
-					height={200}
-					backendAPI={backendAPI}
+					width={BatteryGraphWidth*window.devicePixelRatio}
+					height={BatteryGraphHeight*window.devicePixelRatio}
+					dataProvider={backendAPI}
 					style={{
-						width: '268px',
-						height: '200px',
+						width: BatteryGraphWidth+'px',
+						height: BatteryGraphHeight+'px',
 						padding: '0px'
 					}}/>
 				<ButtonItem
